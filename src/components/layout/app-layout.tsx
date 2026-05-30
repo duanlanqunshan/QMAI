@@ -1,0 +1,199 @@
+import { useCallback, useEffect, useRef, useState } from "react"
+import { useWikiStore } from "@/stores/wiki-store"
+import { listDirectory } from "@/commands/fs"
+import { normalizePath } from "@/lib/path-utils"
+import { IconSidebar } from "./icon-sidebar"
+import { SidebarPanel } from "./sidebar-panel"
+import { ContentArea } from "./content-area"
+import { ActivityPanel } from "./activity-panel"
+import { useOutlineGenerationStore, type OutlineGenerationTask, type OutlineGenerationState } from "@/stores/outline-generation-store"
+import { ErrorBoundary } from "@/components/error-boundary"
+import { clampSidebarWidth } from "@/lib/workspace-layout"
+import { useTranslation } from "react-i18next"
+
+interface AppLayoutProps {
+  onSwitchProject: () => void
+}
+
+export function AppLayout({ onSwitchProject }: AppLayoutProps) {
+  const { t } = useTranslation()
+  const project = useWikiStore((s) => s.project)
+  const activeView = useWikiStore((s) => s.activeView)
+  const setFileTree = useWikiStore((s) => s.setFileTree)
+  const outlineTasks = useOutlineGenerationStore((s: OutlineGenerationState) => s.tasks)
+  const removeOutlineTask = useOutlineGenerationStore((s: OutlineGenerationState) => s.removeTask)
+  const [leftWidth, setLeftWidth] = useState(220)
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false)
+  const isDraggingLeft = useRef(false)
+  const containerRef = useRef<HTMLDivElement>(null)
+  const latestOutlineTask = outlineTasks
+    .filter((task: OutlineGenerationTask) => (
+      task.status === "generating" ||
+      task.status === "generated" ||
+      task.status === "error"
+    ))
+    .sort((a: OutlineGenerationTask, b: OutlineGenerationTask) => b.updatedAt - a.updatedAt)[0] ?? null
+
+  const loadFileTree = useCallback(async () => {
+    if (!project) return
+    try {
+      const tree = await listDirectory(normalizePath(project.path))
+      setFileTree(tree)
+    } catch (err) {
+      console.error("Failed to load file tree:", err)
+    }
+  }, [project, setFileTree])
+
+  useEffect(() => {
+    loadFileTree()
+  }, [loadFileTree])
+
+  const startDrag = useCallback(
+    (side: "left") => (e: React.MouseEvent) => {
+      e.preventDefault()
+      if (side === "left") isDraggingLeft.current = true
+      document.body.style.cursor = "col-resize"
+      document.body.style.userSelect = "none"
+      document.body.dataset.panelResizing = "true"
+
+      const handleMouseMove = (e: MouseEvent) => {
+        if (!containerRef.current) return
+        const rect = containerRef.current.getBoundingClientRect()
+
+        if (isDraggingLeft.current) {
+          const newWidth = e.clientX - rect.left
+          setLeftWidth(clampSidebarWidth(newWidth))
+        }
+      }
+
+      const handleMouseUp = () => {
+        isDraggingLeft.current = false
+        document.body.style.cursor = ""
+        document.body.style.userSelect = ""
+        delete document.body.dataset.panelResizing
+        document.removeEventListener("mousemove", handleMouseMove)
+        document.removeEventListener("mouseup", handleMouseUp)
+      }
+
+      document.addEventListener("mousemove", handleMouseMove)
+      document.addEventListener("mouseup", handleMouseUp)
+    },
+    []
+  )
+
+  // Settings is a full-width admin view — the file tree / activity panel
+  // are irrelevant there and their narrow column makes the settings form
+  // cramped. Hide both the left sidebar (and the file preview on the
+  // right) so the settings screen uses the whole content area.
+  const isSettings = activeView === "settings"
+  // Novel mode keeps the writing editor inside the chapter workspace only.
+  // Outline/search/graph views no longer mount a secondary preview panel.
+
+  useEffect(() => {
+    const savedCollapsed = localStorage.getItem("lk-sidebar-collapsed")
+    if (savedCollapsed === "1") {
+      setSidebarCollapsed(true)
+    }
+  }, [])
+
+  useEffect(() => {
+    localStorage.setItem("lk-sidebar-collapsed", sidebarCollapsed ? "1" : "0")
+  }, [sidebarCollapsed])
+
+  return (
+    <div className="flex h-screen flex-col bg-background text-foreground">
+      {latestOutlineTask && (
+        <div className="fixed bottom-3 right-3 z-50 w-80 rounded-lg border bg-background p-3 shadow-lg">
+          <div className="text-sm font-medium">
+            {latestOutlineTask.status === "generating"
+              ? latestOutlineTask.kind === "refine"
+                ? (latestOutlineTask.displayTitle && latestOutlineTask.displayTitle !== t("novel.outlineGenerator.refineTitle")
+                  ? t("novel.outlineGenerator.sectionGenerating", { title: latestOutlineTask.displayTitle })
+                  : t("novel.outlineGenerator.refining"))
+                : t("novel.outlineGenerator.generatingTitle")
+              : latestOutlineTask.status === "error"
+                ? t("novel.outlineGenerator.error")
+                : latestOutlineTask.kind === "refine"
+                  ? t("novel.outlineGenerator.refineTitle")
+                  : t("novel.outlineGenerator.generatedTitle")}
+          </div>
+          <div className="mt-1 text-xs text-muted-foreground">
+            {latestOutlineTask.status === "generating"
+              ? t("novel.outlineGenerator.generationMayTakeLong")
+              : latestOutlineTask.status === "error"
+                ? latestOutlineTask.message
+                : latestOutlineTask.kind === "refine"
+                  ? latestOutlineTask.message
+                  : t("novel.outlineGenerator.generatedDescription")}
+          </div>
+          <div className="mt-3 flex gap-2">
+            {latestOutlineTask.outlinePath ? (
+              <>
+                <button
+                  type="button"
+                  className="rounded-md border px-3 py-1.5 text-xs"
+                  onClick={async () => {
+                    const { openGeneratedOutline } = await import("@/lib/novel/outline-generation")
+                    await openGeneratedOutline(latestOutlineTask.id)
+                  }}
+                >
+                  {t("novel.outlineGenerator.openOutline")}
+                </button>
+                {latestOutlineTask.kind === "outline" ? (
+                  <button
+                    type="button"
+                    className="rounded-md bg-primary px-3 py-1.5 text-xs text-primary-foreground"
+                    onClick={async () => {
+                      const { runOutlineIngestTask } = await import("@/lib/novel/outline-generation")
+                      await runOutlineIngestTask(latestOutlineTask.id)
+                    }}
+                  >
+                    {t("novel.outlineGenerator.ingestNow")}
+                  </button>
+                ) : null}
+              </>
+            ) : null}
+            <button
+              type="button"
+              className="rounded-md px-3 py-1.5 text-xs text-muted-foreground"
+              onClick={() => removeOutlineTask(latestOutlineTask.id)}
+            >
+              {t("novel.outlineGenerator.handleLater")}
+            </button>
+          </div>
+        </div>
+      )}
+      <div className="flex min-h-0 flex-1">
+        <IconSidebar
+          onToggleSidebar={() => setSidebarCollapsed((v) => !v)}
+          onOpenSidebar={() => setSidebarCollapsed(false)}
+          onSwitchProject={onSwitchProject}
+        />
+        <div ref={containerRef} className="flex min-w-0 flex-1 overflow-hidden">
+        {!isSettings && !sidebarCollapsed && (
+          <>
+            <div
+              className="flex shrink-0 flex-col overflow-hidden border-r"
+              style={{ width: leftWidth }}
+            >
+              <div className="flex-1 overflow-hidden">
+                <SidebarPanel />
+              </div>
+              <ActivityPanel />
+            </div>
+            <div
+              className="w-1.5 shrink-0 cursor-col-resize bg-border/40 transition-colors hover:bg-primary/30 active:bg-primary/40"
+              onMouseDown={startDrag("left")}
+            />
+          </>
+        )}
+        <div className="min-w-0 flex-1 overflow-hidden">
+          <ErrorBoundary>
+            <ContentArea />
+          </ErrorBoundary>
+        </div>
+        </div>
+      </div>
+    </div>
+  )
+}

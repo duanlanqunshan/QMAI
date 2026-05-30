@@ -1,0 +1,13 @@
+.worktrees/
+.worktrees
+.superpowers/
+node_modules/
+dist/
+release-portable/
+release-portable-*/
+release-portable-backup/
+release-github/
+.codex-temp/
+src-tauri/target/
+*.tsbuildinfo
+.codex-*.log
