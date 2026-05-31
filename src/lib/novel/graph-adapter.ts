@@ -362,6 +362,13 @@ function nodeIdToSlug(nodeId: string): string {
   return idx >= 0 ? nodeId.slice(idx + 1) : nodeId
 }
 
+function snapshotSourceFileName(chapterNumber: number): string {
+  if (chapterNumber < 0) {
+    return `outline-${String(Math.abs(chapterNumber)).padStart(3, "0")}.snapshot.json`
+  }
+  return `${String(chapterNumber).padStart(3, "0")}.snapshot.json`
+}
+
 function buildEntityPage(
   title: string,
   tag: string,
@@ -433,7 +440,7 @@ export async function writeSnapshotToWiki(
   const edges = snapshotToGraphEdges(canonicalSnapshot)
   const entitiesDir = `${pp}/wiki/entities`
   const today = new Date().toISOString().split("T")[0]
-  const sourceFile = `${String(canonicalSnapshot.chapterNumber).padStart(3, "0")}.snapshot.json`
+  const sourceFile = snapshotSourceFileName(canonicalSnapshot.chapterNumber)
 
   const slugMap = new Map<string, string>()
   for (const node of nodes) {

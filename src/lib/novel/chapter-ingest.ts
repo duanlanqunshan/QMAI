@@ -16,6 +16,7 @@ import { buildChapterIngestOutput, type ChapterIngestOutput } from "./chapter-in
 import { createChapterPipeline } from "./chapter-pipeline"
 import { mergeSnapshotTimeline } from "./timeline"
 import { buildStructuredMemoryDocuments, isValidMemorySnapshot } from "./memory-rebuild"
+import { clearGraphCache } from "@/lib/graph-relevance"
 
 export interface ValidationWarning {
   type: "entity_new" | "canon_conflict"
@@ -819,7 +820,7 @@ export async function syncSnapshotToMemory(
 
   // 清理旧实体：如果一个实体文件不在新写入列表中，且其内容引用了当前快照的 source，则删除
   const writtenFileNames = new Set(writtenEntityPaths.map(p => p.split("/").pop() ?? ""))
-  const snapshotSourceFile = `${String(syncedSnapshot.chapterNumber < 0 ? `outline-${String(Math.abs(syncedSnapshot.chapterNumber)).padStart(3, "0")}` : String(syncedSnapshot.chapterNumber).padStart(3, "0"))}.snapshot.json`
+  const snapshotSourceFiles = new Set(snapshotSourceFileNameCandidates(syncedSnapshot.chapterNumber))
 
   for (const oldFile of oldEntityFiles) {
     if (writtenFileNames.has(oldFile)) continue // 仍然存在于新快照中，保留
@@ -827,12 +828,11 @@ export async function syncSnapshotToMemory(
       const filePath = `${entitiesDir}/${oldFile}`
       const content = await readFile(filePath)
       // 只删除引用了当前快照 source 的实体文件
-      if (content.includes(snapshotSourceFile)) {
+      if (Array.from(snapshotSourceFiles).some(sourceFile => content.includes(sourceFile))) {
         // 检查是否还被其他快照引用
-        const otherSourceMatch = content.match(/sources?:.*?\.snapshot\.json/g)
-        const allSources = otherSourceMatch?.map(m => m.match(/(\w+\.snapshot\.json)/)?.[1]).filter(Boolean) ?? []
-        const onlyCurrentSource = allSources.every(s => s === snapshotSourceFile)
-        if (onlyCurrentSource || allSources.length === 0) {
+        const allSources = content.match(/[A-Za-z0-9_-]+\.snapshot\.json/g) ?? []
+        const onlyCurrentSource = allSources.length > 0 && allSources.every(s => snapshotSourceFiles.has(s))
+        if (onlyCurrentSource) {
           await deleteFile(filePath)
         }
       }
@@ -855,8 +855,18 @@ export async function syncSnapshotToMemory(
 
   await saveSnapshot(pp, syncedSnapshot)
   const memoryPagePaths = await exportStructuredMemoryToWiki(pp, syncedSnapshot)
+  clearGraphCache()
+  useWikiStore.getState().bumpDataVersion()
 
   return { writtenEntityPaths, memoryPagePaths, memorySyncedAt }
+}
+
+function snapshotSourceFileNameCandidates(chapterNumber: number): string[] {
+  const canonical = chapterNumber < 0
+    ? `outline-${String(Math.abs(chapterNumber)).padStart(3, "0")}.snapshot.json`
+    : `${String(chapterNumber).padStart(3, "0")}.snapshot.json`
+  const legacy = `${String(chapterNumber).padStart(3, "0")}.snapshot.json`
+  return Array.from(new Set([canonical, legacy]))
 }
 
 async function syncCharacterStateChanges(projectPath: string, snapshot: ChapterSnapshot): Promise<void> {
