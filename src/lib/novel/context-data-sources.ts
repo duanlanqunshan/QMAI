@@ -12,6 +12,7 @@ import { loadRevisionFeedbackForContext } from "./revision-feedback"
 import { loadCognitionState, cognitionToContextText } from "./character-cognition"
 import { getChapterVolumes } from "./volume"
 import { readSoulDoc } from "./soul-doc"
+import { buildTerminologyGuardPrompt } from "./terminology-guard"
 import type { DataSource, ContextLoadContext } from "./context-data-source"
 
 // 导入现有的辅助函数
@@ -245,6 +246,22 @@ export const fallbackTimelineDataSource: DataSource<string> = {
 }
 
 /**
+ * 术语守卫数据源
+ * 自动注入术语约束规则，确保AI写作时不改变已定义的关键术语
+ */
+export const terminologyGuardDataSource: DataSource<string> = {
+  name: "terminologyGuard",
+  priority: 9,
+  async load(context: ContextLoadContext): Promise<string> {
+    try {
+      return await buildTerminologyGuardPrompt(context.projectPath)
+    } catch {
+      return ""
+    }
+  },
+}
+
+/**
  * 相关设定数据源
  */
 export const relatedSettingsDataSource: DataSource<string> = {
@@ -398,6 +415,7 @@ export function getAllDataSources(): DataSource<any>[] {
     fallbackCharacterStatesDataSource,
     fallbackForeshadowingStatesDataSource,
     fallbackTimelineDataSource,
+    terminologyGuardDataSource,
     relatedSettingsDataSource,
     canonRulesDataSource,
     writingStyleDataSource,

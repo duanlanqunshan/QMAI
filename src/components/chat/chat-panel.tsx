@@ -1,9 +1,12 @@
 import { useRef, useEffect, useCallback, useState } from "react"
 import { useTranslation } from "react-i18next"
-import { BookOpen, Brain, PencilLine, Plus, Trash2, MessageSquare, FileEdit } from "lucide-react"
+import { BookOpen, Brain, PencilLine, Plus, Trash2, MessageSquare, FileEdit, FileText } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip"
+import { Input } from "@/components/ui/input"
+import { Label } from "@/components/ui/label"
+import { Textarea } from "@/components/ui/textarea"
 import { ChatMessage, StreamingMessage } from "./chat-message"
 import { ChatDockControls } from "./chat-dock-controls"
 import { setLastQueryPages, useSourceFiles } from "./chat-shared"
@@ -203,6 +206,15 @@ export function ChatPanel() {
   const [pendingSoulDialog, setPendingSoulDialog] = useState({ open: false, summary: "" })
   const [deepChapterEnabled, setDeepChapterEnabled] = useState(true)
   const [aiChatModelOptions, setAiChatModelOptions] = useState<string[]>([])
+  const [showChapterComposer, setShowChapterComposer] = useState(false)
+  const [composerChapterNumber, setComposerChapterNumber] = useState("")
+  const [composerChapterTitle, setComposerChapterTitle] = useState("")
+  const [composerStoryGoal, setComposerStoryGoal] = useState("")
+  const [composerPerspectiveChar, setComposerPerspectiveChar] = useState("")
+  const [composerIncludeElements, setComposerIncludeElements] = useState("")
+  const [composerExcludeElements, setComposerExcludeElements] = useState("")
+  const [composerStyleReq, setComposerStyleReq] = useState("")
+  const [composerOutline, setComposerOutline] = useState("")
   const closeSoulDialog = useCallback((confirmed: boolean) => {
     const resolver = soulDialogResolverRef.current
     soulDialogResolverRef.current = null
@@ -216,6 +228,32 @@ export function ChatPanel() {
       soulDialogResolverRef.current = resolve
     })
   }, [])
+
+  const handleOpenChapterComposer = useCallback(async () => {
+    setComposerChapterNumber("")
+    setComposerChapterTitle("")
+    setComposerStoryGoal("")
+    setComposerPerspectiveChar("")
+    setComposerIncludeElements("")
+    setComposerExcludeElements("")
+    setComposerStyleReq("")
+    setComposerOutline("")
+    if (selectedFile) {
+      try {
+        const outNum = await readSelectedChapterNumberForFile(selectedFile)
+        if (outNum) {
+          setComposerChapterNumber(String(outNum))
+        }
+      } catch {}
+      try {
+        const content = await readFile(selectedFile)
+        if (content) {
+          setComposerOutline(content.slice(0, 3000))
+        }
+      } catch {}
+    }
+    setShowChapterComposer(true)
+  }, [selectedFile])
 
   useEffect(() => {
     let cancelled = false
@@ -995,6 +1033,42 @@ export function ChatPanel() {
     [aiChatModel, llmConfig, chatEditModeEnabled, addMessage, setStreaming, setStreamingContent, appendStreamToken, finalizeStream, createConversation, maxHistoryMessages, requestSoulDialog, deepChapterEnabled, project, novelMode, selectedFile],
   )
 
+  const handleChapterComposerSend = useCallback(() => {
+    setShowChapterComposer(false)
+    const parts: string[] = []
+    if (composerChapterNumber.trim()) {
+      parts.push(`章节号：第${composerChapterNumber.trim()}章`)
+    }
+    if (composerChapterTitle.trim()) {
+      parts.push(`章节标题：${composerChapterTitle.trim()}`)
+    }
+    if (composerStoryGoal.trim()) {
+      parts.push(`故事目标：${composerStoryGoal.trim()}`)
+    }
+    if (composerPerspectiveChar.trim()) {
+      parts.push(`视角人物：${composerPerspectiveChar.trim()}`)
+    }
+    if (composerIncludeElements.trim()) {
+      parts.push(`需要包含的元素：${composerIncludeElements.trim()}`)
+    }
+    if (composerExcludeElements.trim()) {
+      parts.push(`禁止出现/偏离：${composerExcludeElements.trim()}`)
+    }
+    if (composerStyleReq.trim()) {
+      parts.push(`风格要求：${composerStyleReq.trim()}`)
+    }
+    if (composerOutline.trim()) {
+      parts.push(`章节大纲参考：\n${composerOutline.trim()}`)
+    }
+    if (parts.length === 0) return
+    const prompt = "请根据以下章纲要求写作本章内容：\n\n" + parts.join("\n\n")
+    handleSend(prompt)
+  }, [
+    composerChapterNumber, composerChapterTitle, composerStoryGoal,
+    composerPerspectiveChar, composerIncludeElements, composerExcludeElements,
+    composerStyleReq, composerOutline, handleSend,
+  ])
+
   const handleStop = useCallback(() => {
     const sessionId = activeStreamSessionRef.current
     const currentStreamingContent = useChatStore.getState().streamingContent
@@ -1396,6 +1470,24 @@ export function ChatPanel() {
                             开启后，AI会话会读取当前章节或识别到的章节范围进行修改，并在写回前自动备份原内容。
                           </TooltipContent>
                         </Tooltip>
+                        <Tooltip>
+                          <TooltipTrigger
+                            render={(
+                              <Button
+                                type="button"
+                                variant="ghost"
+                                size="sm"
+                                onClick={handleOpenChapterComposer}
+                              />
+                            )}
+                          >
+                            <FileText className="mr-1 h-4 w-4" />
+                            章纲写作
+                          </TooltipTrigger>
+                          <TooltipContent side="top" className="max-w-xs leading-5">
+                            打开章纲写作对话框，填写章节目标、视角人物、包含/禁止元素、风格要求和大纲后发起AI写作。
+                          </TooltipContent>
+                        </Tooltip>
                       </>
                     ) : null}
                   </div>
@@ -1443,6 +1535,112 @@ export function ChatPanel() {
             <DialogFooter>
               <Button variant="outline" onClick={() => closeSoulDialog(false)}>取消本次生成</Button>
               <Button onClick={() => closeSoulDialog(true)}>继续生成</Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+        <Dialog open={showChapterComposer} onOpenChange={setShowChapterComposer}>
+          <DialogContent className="max-w-2xl">
+            <DialogHeader>
+              <DialogTitle>章纲写作</DialogTitle>
+              <DialogDescription>
+                填写以下字段来指导AI写作本章内容。留空的字段将不会被注入提示词。
+              </DialogDescription>
+            </DialogHeader>
+            <div className="grid gap-4 overflow-y-auto max-h-[60vh] pr-1">
+              <div className="grid grid-cols-2 gap-3">
+                <div className="space-y-1.5">
+                  <Label htmlFor="chap-num">章节号</Label>
+                  <Input
+                    id="chap-num"
+                    placeholder="如：12"
+                    value={composerChapterNumber}
+                    onChange={(e) => setComposerChapterNumber(e.target.value)}
+                  />
+                </div>
+                <div className="space-y-1.5">
+                  <Label htmlFor="chap-title">章节标题</Label>
+                  <Input
+                    id="chap-title"
+                    placeholder="如：暗流涌动"
+                    value={composerChapterTitle}
+                    onChange={(e) => setComposerChapterTitle(e.target.value)}
+                  />
+                </div>
+              </div>
+              <div className="space-y-1.5">
+                <Label htmlFor="story-goal">故事目标</Label>
+                <Input
+                  id="story-goal"
+                  placeholder="本章需要达成的叙事目标，如：揭示B角色的真实身份"
+                  value={composerStoryGoal}
+                  onChange={(e) => setComposerStoryGoal(e.target.value)}
+                />
+              </div>
+              <div className="space-y-1.5">
+                <Label htmlFor="perspective-char">视角人物</Label>
+                <Input
+                  id="perspective-char"
+                  placeholder="本章以谁的视角展开叙事"
+                  value={composerPerspectiveChar}
+                  onChange={(e) => setComposerPerspectiveChar(e.target.value)}
+                />
+              </div>
+              <div className="space-y-1.5">
+                <Label htmlFor="include-elements">需要包含的元素（写作约束）</Label>
+                <Textarea
+                  id="include-elements"
+                  placeholder="本章必须包含的情节元素或写作要求，每行一个"
+                  rows={2}
+                  value={composerIncludeElements}
+                  onChange={(e) => setComposerIncludeElements(e.target.value)}
+                />
+              </div>
+              <div className="space-y-1.5">
+                <Label htmlFor="exclude-elements">禁止出现 / 禁止偏离（写作警戒线）</Label>
+                <Textarea
+                  id="exclude-elements"
+                  placeholder="本章不得出现的内容或不得偏离的方向，每行一个"
+                  rows={2}
+                  value={composerExcludeElements}
+                  onChange={(e) => setComposerExcludeElements(e.target.value)}
+                />
+              </div>
+              <div className="space-y-1.5">
+                <Label htmlFor="style-req">风格要求</Label>
+                <Input
+                  id="style-req"
+                  placeholder="如：对白要简洁有力，环境描写需渲染紧张氛围"
+                  value={composerStyleReq}
+                  onChange={(e) => setComposerStyleReq(e.target.value)}
+                />
+              </div>
+              <div className="space-y-1.5">
+                <Label htmlFor="composer-outline">章节大纲（文本参考）</Label>
+                <Textarea
+                  id="composer-outline"
+                  placeholder="直接粘贴或编写本章的大纲内容"
+                  rows={6}
+                  value={composerOutline}
+                  onChange={(e) => setComposerOutline(e.target.value)}
+                />
+              </div>
+            </div>
+            <DialogFooter className="gap-2">
+              <Button variant="ghost" size="sm" onClick={() => setShowChapterComposer(false)}>
+                取消
+              </Button>
+              <TooltipProvider delay={200}>
+                <Tooltip>
+                  <TooltipTrigger
+                    render={(
+                      <Button onClick={handleChapterComposerSend} disabled={!composerChapterNumber.trim() && !composerChapterTitle.trim() && !composerOutline.trim()}>
+                        发起AI写作
+                      </Button>
+                    )}
+                  />
+                  <TooltipContent>将以上要求组织为提示词，发送到当前AI会话</TooltipContent>
+                </Tooltip>
+              </TooltipProvider>
             </DialogFooter>
           </DialogContent>
         </Dialog>
