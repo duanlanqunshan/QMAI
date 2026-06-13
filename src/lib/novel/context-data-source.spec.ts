@@ -4,6 +4,8 @@ import { DataSourceRegistry, type DataSource, type ContextLoadContext } from "./
 const context: ContextLoadContext = {
   projectPath: "E:/Novel",
   task: "生成大纲",
+  selectedFile: null,
+  selectedFrontmatter: null,
   config: {
     recentSummaryWindow: 8,
     searchTopK: 5,

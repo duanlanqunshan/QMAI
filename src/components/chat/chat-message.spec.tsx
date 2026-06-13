@@ -10,16 +10,16 @@ function tenThinkingLines(): string {
 }
 
 describe("chat thinking display", () => {
-  it("keeps completed thinking content in a fixed scrollable panel", () => {
+  it("keeps completed thinking collapsed by default while preserving the toggle affordance", () => {
     const thinking = tenThinkingLines()
     const html = renderToStaticMarkup(
       <StreamingMessage content={`<think>\n${thinking}\n</think>\n\nfinal answer`} />,
     )
 
-    expect(html).toContain("stage line 1")
-    expect(html).toContain("stage line 10")
-    expect(html).toContain("max-h-")
-    expect(html).toContain("overflow-y-auto")
+    expect(html).toContain("思考过程")
+    expect(html).toContain("lucide-chevron-right")
+    expect(html).not.toContain("stage line 1")
+    expect(html).not.toContain("stage line 10")
     expect(html).not.toContain("Thought for")
   })
 

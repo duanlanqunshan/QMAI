@@ -10,6 +10,8 @@ export interface ContextLoadContext {
   projectPath: string
   task: string
   chapterNumber?: number
+  selectedFile?: string | null
+  selectedFrontmatter?: Record<string, string | string[]> | null
   config: {
     recentSummaryWindow: number
     searchTopK: number
@@ -123,6 +125,7 @@ export class DataSourceRegistry {
       fallbackCharacterStates: "",
       fallbackForeshadowingStates: "",
       fallbackTimeline: "",
+      terminologyGuard: "",
       relatedSettings: "",
       canonRules: "",
       writingStyle: "",

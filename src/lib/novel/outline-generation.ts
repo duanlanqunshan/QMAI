@@ -132,6 +132,7 @@ function formatOutlineRefinementContext(pack: ContextPack): string {
   appendContextSection(sections, "角色认知", pack.cognitionStates)
   appendContextSection(sections, "伏笔状态", pack.foreshadowingStates)
   appendContextSection(sections, "时间线", pack.timeline)
+  appendContextSection(sections, "术语守卫", pack.terminologyGuard)
   appendContextSection(sections, "相关设定", pack.relatedSettings)
   appendContextSection(sections, "正史规则", pack.canonRules)
   appendContextSection(sections, "关联检索", pack.searchResults)
@@ -148,6 +149,7 @@ function formatOutlineGenerationContext(pack: ContextPack): string {
   appendContextSection(sections, "角色认知与信息差", pack.cognitionStates)
   appendContextSection(sections, "伏笔与未回收线索", pack.foreshadowingStates)
   appendContextSection(sections, "时间线与剧情节点", pack.timeline)
+  appendContextSection(sections, "术语守卫", pack.terminologyGuard)
   appendContextSection(sections, "设定与地点组织", pack.relatedSettings)
   appendContextSection(sections, "正史规则", pack.canonRules)
   appendContextSection(sections, "剧情记忆与卡片故事", pack.searchResults)
@@ -207,6 +209,7 @@ function emptyOutlineContextPack(task: string): ContextPack {
     cognitionStates: "",
     foreshadowingStates: "",
     timeline: "",
+    terminologyGuard: "",
     relatedSettings: "",
     canonRules: "",
     writingStyle: "",

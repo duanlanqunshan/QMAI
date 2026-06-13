@@ -269,14 +269,76 @@ export const relatedSettingsDataSource: DataSource<string> = {
   priority: 10,
   async load(context: ContextLoadContext): Promise<string> {
     try {
-      const results = await searchWiki(context.projectPath, "setting 设定 location 地点")
+      const contextTags = extractFrontmatterList(context.selectedFrontmatter?.tags)
+      const contextStatuses = [
+        context.selectedFrontmatter?.status,
+        context.selectedFrontmatter?.chapter_status,
+        context.selectedFrontmatter?.outline_type,
+      ]
+        .flatMap(value => extractFrontmatterList(value))
+        .map(normalizeMetaValue)
+        .filter(Boolean)
+      const queryParts = ["setting", "设定", "location", "地点", ...contextTags, ...contextStatuses]
+      const results = await searchWiki(context.projectPath, Array.from(new Set(queryParts)).join(" "))
       if (results.length > 0) {
-        const contents = await Promise.all(results.slice(0, 3).map(r => readFile(r.path).catch(() => "")))
-        return contents.filter(Boolean).join("\n---\n").slice(0, 2000)
+        const candidates = await Promise.all(
+          results.slice(0, 12).map(async (result) => {
+            const content = await readFile(result.path).catch(() => "")
+            if (!content) return null
+            const frontmatter = parseFrontmatter(content).frontmatter
+            const score = scoreSettingCandidate(frontmatter, contextTags, contextStatuses)
+            return { content, score }
+          }),
+        )
+        const topContents = candidates
+          .filter((candidate): candidate is { content: string; score: number } => Boolean(candidate))
+          .sort((left, right) => right.score - left.score)
+          .slice(0, 3)
+          .map(candidate => candidate.content)
+        return topContents.join("\n---\n").slice(0, 3000)
       }
     } catch {}
     return ""
   },
+}
+
+export function extractFrontmatterList(value: string | string[] | undefined | null): string[] {
+  if (!value) return []
+  if (Array.isArray(value)) {
+    return value.map(item => normalizeMetaValue(item)).filter(Boolean)
+  }
+  return String(value)
+    .split(",")
+    .map(item => normalizeMetaValue(item))
+    .filter(Boolean)
+}
+
+export function normalizeMetaValue(value: string): string {
+  return String(value).trim().toLowerCase()
+}
+
+export function scoreSettingCandidate(
+  frontmatter: Record<string, string | string[]> | null,
+  contextTags: string[],
+  contextStatuses: string[],
+): number {
+  if (!frontmatter) return 0
+
+  const type = normalizeMetaValue(typeof frontmatter.type === "string" ? frontmatter.type : "")
+  const candidateTags = extractFrontmatterList(frontmatter.tags)
+  const candidateStatuses = [frontmatter.status, frontmatter.chapter_status, frontmatter.outline_type]
+    .flatMap(value => extractFrontmatterList(value))
+
+  let score = 0
+  if (["setting", "location", "organization", "item", "rule", "entity"].includes(type)) {
+    score += 3
+  }
+  score += contextTags.filter(tag => candidateTags.includes(tag)).length * 4
+  score += contextStatuses.filter(status => candidateStatuses.includes(status)).length * 3
+  if (candidateTags.length === 0 && candidateStatuses.length === 0) {
+    score += 1
+  }
+  return score
 }
 
 /**

@@ -66,6 +66,13 @@ export function getDeepChapterToggleButtonClass(enabled: boolean): string {
     : "text-muted-foreground hover:text-foreground"
 }
 
+function buildModeSummary(deepChapterEnabled: boolean, chatEditModeEnabled: boolean): string {
+  if (chatEditModeEnabled) {
+    return deepChapterEnabled ? "当前模式：深度思考 + 编辑章节" : "当前模式：普通写作 + 编辑章节"
+  }
+  return deepChapterEnabled ? "当前模式：深度思考写作" : "当前模式：普通写作"
+}
+
 function findPreviousUserRequest(messages: DisplayMessage[], assistantMessageId: string): string | undefined {
   const assistantIndex = messages.findIndex((message) => message.id === assistantMessageId)
   const searchRange = assistantIndex >= 0 ? messages.slice(0, assistantIndex) : messages
@@ -374,14 +381,14 @@ export function ChatPanel() {
   }, [activeConversationId])
 
   const handleSend = useCallback(
-    async (text: string) => {
+    async (text: string, options?: { taskLabel?: string }) => {
       // Auto-create a conversation if none is active
       let convId = useChatStore.getState().activeConversationId
       if (!convId) {
         convId = createConversation()
       }
 
-      addMessage("user", text)
+      addMessage("user", text, { taskLabel: options?.taskLabel })
       setStreaming(true)
       const sessionId = streamSessionGuardRef.current.start()
       activeStreamSessionRef.current = sessionId
@@ -813,12 +820,13 @@ export function ChatPanel() {
               previousChapterEnding: "",
               characterStates: "",
               soulDoc: "",
-              characterAuras: "",
-              cognitionStates: "",
-              foreshadowingStates: "",
-              timeline: "",
-              relatedSettings: "",
-              canonRules: "",
+               characterAuras: "",
+               cognitionStates: "",
+               foreshadowingStates: "",
+               timeline: "",
+               terminologyGuard: "",
+               relatedSettings: "",
+               canonRules: "",
               writingStyle: "",
               searchResults: "",
               graphSearchResults: "",
@@ -1062,7 +1070,7 @@ export function ChatPanel() {
     }
     if (parts.length === 0) return
     const prompt = "请根据以下章纲要求写作本章内容：\n\n" + parts.join("\n\n")
-    handleSend(prompt)
+    void handleSend(prompt, { taskLabel: "章纲写作" })
   }, [
     composerChapterNumber, composerChapterTitle, composerStoryGoal,
     composerPerspectiveChar, composerIncludeElements, composerExcludeElements,
@@ -1224,12 +1232,13 @@ export function ChatPanel() {
              previousChapterEnding: "",
              characterStates: "",
              soulDoc: "",
-             characterAuras: "",
-             cognitionStates: "",
-             foreshadowingStates: "",
-             timeline: "",
-             relatedSettings: "",
-             canonRules: "",
+              characterAuras: "",
+              cognitionStates: "",
+              foreshadowingStates: "",
+              timeline: "",
+              terminologyGuard: "",
+              relatedSettings: "",
+              canonRules: "",
              writingStyle: "",
              searchResults: "",
              graphSearchResults: "",
@@ -1491,6 +1500,12 @@ export function ChatPanel() {
                       </>
                     ) : null}
                   </div>
+                  {novelMode ? (
+                    <div className="min-w-[260px] flex-1 text-right text-[11px] leading-5 text-muted-foreground">
+                      <div>{buildModeSummary(deepChapterEnabled, chatEditModeEnabled)}</div>
+                      <div>章纲写作是任务模板，会继承当前模式，不是单独模式。</div>
+                    </div>
+                  ) : null}
                   <div className="flex items-center gap-2">
                     <span className="text-xs text-muted-foreground">AI会话模型</span>
                     <select

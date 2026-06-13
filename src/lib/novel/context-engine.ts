@@ -48,6 +48,7 @@ export interface ContextPack {
   cognitionStates: string
   foreshadowingStates: string
   timeline: string
+  terminologyGuard: string
   relatedSettings: string
   canonRules: string
   writingStyle: string
@@ -71,7 +72,7 @@ export async function buildContextPack(
   }
 
   // 构建加载上下文
-  const context = buildLoadContext(pp, task, chapterNumber)
+  const context = await buildLoadContext(pp, task, chapterNumber)
   
   // 创建数据源注册器并加载所有数据
   const registry = createDataSourceRegistry()
@@ -84,18 +85,31 @@ export async function buildContextPack(
 /**
  * 构建加载上下文配置
  */
-function buildLoadContext(
+async function buildLoadContext(
   projectPath: string,
   task: string,
   chapterNumber?: number,
-): ContextLoadContext {
-  const novelConfig = useWikiStore.getState().novelConfig
-  const revisionFeedbackWindowConfig = useWikiStore.getState().revisionFeedbackWindowConfig
+): Promise<ContextLoadContext> {
+  const state = useWikiStore.getState()
+  const novelConfig = state.novelConfig
+  const revisionFeedbackWindowConfig = state.revisionFeedbackWindowConfig
+  const selectedFile = state.selectedFile
+  let selectedFrontmatter: Record<string, string | string[]> | null = null
+
+  if (selectedFile) {
+    try {
+      selectedFrontmatter = parseFrontmatter(await readFile(selectedFile)).frontmatter
+    } catch {
+      selectedFrontmatter = null
+    }
+  }
   
   return {
     projectPath,
     task,
     chapterNumber: chapterNumber ?? extractChapterNumberFromTask(task),
+    selectedFile,
+    selectedFrontmatter,
     config: {
       recentSummaryWindow: novelConfig.recentSummaryWindow > 0 ? novelConfig.recentSummaryWindow : 8,
       searchTopK: novelConfig.searchTopK > 0 ? novelConfig.searchTopK : 5,
@@ -193,6 +207,7 @@ async function buildContextPackFromRawData(
     cognitionStates: rawData.cognitionText,
     foreshadowingStates,
     timeline,
+    terminologyGuard: rawData.terminologyGuard,
     relatedSettings: rawData.relatedSettings,
     canonRules: rawData.canonRules,
     writingStyle: rawData.writingStyle,
@@ -341,6 +356,7 @@ function emptyPack(task: string): ContextPack {
     cognitionStates: "",
     foreshadowingStates: "",
     timeline: "",
+    terminologyGuard: "",
     relatedSettings: "",
     canonRules: "",
     writingStyle: "",
@@ -988,6 +1004,7 @@ const FIELD_CONFIGS: FieldConfig[] = [
   { titleKey: "novel.contextPack.cognitionStates", fieldKey: "cognitionStates" },
   { titleKey: "novel.contextPack.foreshadowingStates", fieldKey: "foreshadowingStates" },
   { titleKey: "novel.contextPack.timeline", fieldKey: "timeline" },
+  { titleKey: "novel.contextPack.mustAvoid.title", fieldKey: "terminologyGuard" },
   { titleKey: "novel.contextPack.relatedSettings", fieldKey: "relatedSettings" },
   { titleKey: "novel.contextPack.canonRules", fieldKey: "canonRules" },
   { titleKey: "novel.contextPack.writingStyle", fieldKey: "writingStyle" },

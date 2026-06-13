@@ -34,6 +34,7 @@ const mocks = vi.hoisted(() => ({
     cognitionStates: "主角不知道族谱已经被人换过。",
     foreshadowingStates: "旧钥匙、族谱缺页、门缝冷光都未回收。",
     timeline: "雨夜，进入祠堂前后不超过一小时。",
+    terminologyGuard: "术语守卫：\"族谱缺页\"必须保持原称呼，不得改写。",
     relatedSettings: "祠堂位于村东，只有一扇正门。",
     canonRules: "不能提前揭露小晴真实身份。",
     writingStyle: "短句、悬疑、画面感。",

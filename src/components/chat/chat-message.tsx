@@ -67,6 +67,13 @@ export function ChatMessage({ message, isLastAssistant, onRegenerate, novelMode,
         {isUser ? <User className="h-4 w-4" /> : <Bot className="h-4 w-4" />}
       </div>
       <div className="max-w-[80%] flex flex-col gap-1.5">
+        {message.taskLabel && !message.discarded && (
+          <div className={`flex ${isUser ? "justify-end" : "justify-start"}`}>
+            <span className="inline-flex items-center rounded-full border border-blue-500/30 bg-blue-50 px-2 py-0.5 text-[11px] font-medium text-blue-700 dark:bg-blue-950/20 dark:text-blue-300">
+              {message.taskLabel}
+            </span>
+          </div>
+        )}
         <div
           className={`rounded-lg px-3 py-2 text-sm ${
             isUser
@@ -343,106 +350,89 @@ function CitedReferencesPanel({ content, savedReferences }: { content: string; s
     <div className="rounded-md border border-border/60 bg-muted/30 text-xs mb-1">
       <button
         type="button"
-        onClick={() => hasMore && setExpanded(!expanded)}
+        onClick={() => setExpanded((value) => !value)}
         className="flex w-full items-center gap-1.5 px-2 py-1 text-muted-foreground hover:text-foreground transition-colors"
       >
         <FileText className="h-3 w-3 shrink-0" />
         <span className="font-medium">引用资料（{citedPages.length}）</span>
-        {hasMore && (
-          expanded
-            ? <ChevronDown className="h-3 w-3 ml-auto" />
-            : <ChevronRight className="h-3 w-3 ml-auto" />
-        )}
+        {expanded
+          ? <ChevronDown className="h-3 w-3 ml-auto" />
+          : <ChevronRight className="h-3 w-3 ml-auto" />}
       </button>
-      <div className="px-2 pb-1.5">
-        {visiblePages.map((page, i) => {
-          const refType = getRefType(page.path)
-          const config = REF_TYPE_CONFIG[refType] ?? REF_TYPE_CONFIG.source
-          const Icon = config.icon
-          const info = imageInfos[page.path]
-          const hasImages = (info?.count ?? 0) > 0
-          const openCitedPage = async () => {
-            if (!project) return
-            const pp = normalizePath(project.path)
-            const id = getFileName(page.path.replace(/^wiki\//, "").replace(/\.md$/, ""))
-            const candidates = [
-              `${pp}/${page.path}`,
-              `${pp}/wiki/entities/${id}.md`,
-              `${pp}/wiki/concepts/${id}.md`,
-              `${pp}/wiki/sources/${id}.md`,
-              `${pp}/wiki/queries/${id}.md`,
-              `${pp}/wiki/synthesis/${id}.md`,
-              `${pp}/wiki/comparisons/${id}.md`,
-              `${pp}/wiki/${id}.md`,
-            ]
-            for (const candidate of candidates) {
-              try {
-                await readFile(candidate)
-                setSelectedFile(candidate)
-                return
-              } catch {
-                // try next
+      {expanded && (
+        <div className="px-2 pb-1.5">
+          {visiblePages.map((page, i) => {
+            const refType = getRefType(page.path)
+            const config = REF_TYPE_CONFIG[refType] ?? REF_TYPE_CONFIG.source
+            const Icon = config.icon
+            const info = imageInfos[page.path]
+            const hasImages = (info?.count ?? 0) > 0
+            const openCitedPage = async () => {
+              if (!project) return
+              const pp = normalizePath(project.path)
+              const id = getFileName(page.path.replace(/^wiki\//, "").replace(/\.md$/, ""))
+              const candidates = [
+                `${pp}/${page.path}`,
+                `${pp}/wiki/entities/${id}.md`,
+                `${pp}/wiki/concepts/${id}.md`,
+                `${pp}/wiki/sources/${id}.md`,
+                `${pp}/wiki/queries/${id}.md`,
+                `${pp}/wiki/synthesis/${id}.md`,
+                `${pp}/wiki/comparisons/${id}.md`,
+                `${pp}/wiki/${id}.md`,
+              ]
+              for (const candidate of candidates) {
+                try {
+                  await readFile(candidate)
+                  setSelectedFile(candidate)
+                  return
+                } catch {
+                  // try next
+                }
               }
+              setSelectedFile(`${pp}/${page.path}`)
             }
-            setSelectedFile(`${pp}/${page.path}`)
-          }
-          return (
-            // Outer is a div, NOT a button — we have two click
-            // targets inside (image badge + main row) and nesting
-            // a button inside a button is invalid HTML and breaks
-            // event delegation. Hover effect shifts to the inner
-            // buttons individually so each gives feedback.
-            <div
-              key={page.path}
-              className="flex w-full items-center gap-1.5 rounded text-left"
-              title={page.path}
-            >
-              <span className="text-[10px] text-muted-foreground/60 w-4 shrink-0 text-right">[{i + 1}]</span>
-              {/*
-               * Image badge — clickable, separately from the page
-               * row. Click → resolve the FIRST image's raw source
-               * (`raw/sources/<slug>.<ext>`) and open the FULL
-               * combined-extraction preview, scrolled to that
-               * image. This mirrors the search-view lightbox
-               * "Jump to source document" behavior so the two
-               * surfaces feel consistent.
-               *
-               * Icon: lucide `Image` (picture-frame outline with
-               * mountain + sun) — direct visual cue for "image",
-               * NOT `Camera` which reads as "take a photo".
-               */}
-              {hasImages && info?.firstUrl && (
+            return (
+              // Outer is a div, NOT a button — we have two click
+              // targets inside (image badge + main row) and nesting
+              // a button inside a button is invalid HTML and breaks
+              // event delegation. Hover effect shifts to the inner
+              // buttons individually so each gives feedback.
+              <div
+                key={page.path}
+                className="flex w-full items-center gap-1.5 rounded text-left"
+                title={page.path}
+              >
+                <span className="text-[10px] text-muted-foreground/60 w-4 shrink-0 text-right">[{i + 1}]</span>
+                {hasImages && info?.firstUrl && (
+                  <button
+                    type="button"
+                    onClick={() => handleJumpToImageSource(info.firstUrl!, page.path)}
+                    className="flex shrink-0 items-center gap-0.5 rounded px-1 py-0.5 text-[10px] text-blue-600 hover:bg-blue-100/40 dark:text-blue-400 dark:hover:bg-blue-900/30 transition-colors"
+                    title={`打开第一张图片所在原始文档（本页共 ${info.count} 张图片）`}
+                  >
+                    <ImageIcon className="h-3 w-3" />
+                    {info.count}
+                  </button>
+                )}
                 <button
                   type="button"
-                  onClick={() => handleJumpToImageSource(info.firstUrl!, page.path)}
-                  className="flex shrink-0 items-center gap-0.5 rounded px-1 py-0.5 text-[10px] text-blue-600 hover:bg-blue-100/40 dark:text-blue-400 dark:hover:bg-blue-900/30 transition-colors"
-                  title={`打开第一张图片所在原始文档（本页共 ${info.count} 张图片）`}
+                  onClick={openCitedPage}
+                  className="flex min-w-0 flex-1 items-center gap-1.5 rounded px-1 py-0.5 text-left hover:bg-accent/50 transition-colors"
                 >
-                  <ImageIcon className="h-3 w-3" />
-                  {info.count}
+                  <Icon className={`h-3 w-3 shrink-0 ${config.color}`} />
+                  <span className="truncate text-foreground/80">{page.title}</span>
                 </button>
-              )}
-              <button
-                type="button"
-                onClick={openCitedPage}
-                className="flex min-w-0 flex-1 items-center gap-1.5 rounded px-1 py-0.5 text-left hover:bg-accent/50 transition-colors"
-              >
-                <Icon className={`h-3 w-3 shrink-0 ${config.color}`} />
-                <span className="truncate text-foreground/80">{page.title}</span>
-              </button>
+              </div>
+            )
+          })}
+          {hasMore && (
+            <div className="pt-1 text-center text-[10px] text-muted-foreground">
+              当前显示 {visiblePages.length} / {citedPages.length} 条引用
             </div>
-          )
-        })}
-        {hasMore && !expanded && (
-          <button
-            type="button"
-            onClick={() => setExpanded(true)}
-            className="w-full text-center text-[10px] text-muted-foreground hover:text-primary pt-0.5"
-          >
-            +{citedPages.length - MAX_COLLAPSED} 条更多引用...
-          </button>
-        )}
-      </div>
+          )}
+        </div>
+      )}
     </div>
   )
 }
@@ -539,7 +529,7 @@ export function StreamingMessage({ content }: StreamingMessageProps) {
           <StreamingThinkingBlock content={thinking} />
         ) : (
           <>
-            {thinking && <ThinkingBlock content={thinking} />}
+            {thinking && <ThinkingBlock content={thinking} defaultOpen={false} />}
             <MarkdownContent content={answer} />
             <span className="animate-pulse">▊</span>
           </>
@@ -608,7 +598,7 @@ function MarkdownContent({ content }: { content: string }) {
 
   return (
     <div>
-      {thinking && <ThinkingBlock content={thinking} />}
+      {thinking && <ThinkingBlock content={thinking} defaultOpen={false} />}
       <div
         className="chat-markdown prose prose-sm max-w-none dark:prose-invert prose-p:my-1 prose-headings:my-2 prose-ul:my-1 prose-ol:my-1 prose-li:my-0 prose-pre:my-2 prose-code:text-xs prose-code:before:content-none prose-code:after:content-none"
         dir={direction}
@@ -737,19 +727,27 @@ function StreamingThinkingBlock({ content }: { content: string }) {
 }
 
 /** Completed thinking: keep it fully visible; the outer chat scroll owns scrolling. */
-function ThinkingBlock({ content }: { content: string }) {
+function ThinkingBlock({ content, defaultOpen = false }: { content: string; defaultOpen?: boolean }) {
   const lines = content.split("\n").filter((l) => l.trim())
+  const [open, setOpen] = useState(defaultOpen)
 
   return (
     <div className="mb-2 rounded-md border border-dashed border-amber-500/30 bg-amber-50/50 dark:bg-amber-950/20">
-      <div className="flex w-full items-center gap-1.5 px-2.5 py-1.5 text-xs text-amber-700 dark:text-amber-400">
+      <button
+        type="button"
+        onClick={() => setOpen((value) => !value)}
+        className="flex w-full items-center gap-1.5 px-2.5 py-1.5 text-xs text-amber-700 transition-colors hover:text-amber-900 dark:text-amber-400 dark:hover:text-amber-200"
+      >
+        {open ? <ChevronDown className="h-3 w-3" /> : <ChevronRight className="h-3 w-3" />}
         <span className="text-sm">💭</span>
         <span className="font-medium">思考过程</span>
         <span className="text-[10px] text-amber-600/60 dark:text-amber-500/60">{lines.length} 行</span>
-      </div>
-      <div className="max-h-72 overflow-y-auto border-t border-amber-500/20 px-2.5 py-2 pr-1 text-xs text-amber-800/80 dark:text-amber-300/70 whitespace-pre-wrap break-words font-mono leading-relaxed">
-        {content}
-      </div>
+      </button>
+      {open && (
+        <div className="max-h-72 overflow-y-auto border-t border-amber-500/20 px-2.5 py-2 pr-1 text-xs text-amber-800/80 dark:text-amber-300/70 whitespace-pre-wrap break-words font-mono leading-relaxed">
+          {content}
+        </div>
+      )}
     </div>
   )
 }

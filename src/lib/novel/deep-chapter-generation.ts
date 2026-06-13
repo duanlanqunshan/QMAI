@@ -649,6 +649,7 @@ async function safeBuildChapterContextPack(
       cognitionStates: "",
       foreshadowingStates: "",
       timeline: "",
+      terminologyGuard: "",
       relatedSettings: "",
       canonRules: "",
       writingStyle: "",

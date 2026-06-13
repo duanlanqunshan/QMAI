@@ -40,6 +40,7 @@ const contextPack: ContextPack = {
   cognitionStates: "主角不知道旧屋主人真实身份。",
   foreshadowingStates: "匿名信、锈钥匙尚未回收。",
   timeline: "雨夜，当晚十点。",
+  terminologyGuard: "术语守卫：\"锈钥匙\"保持原称呼，不得替换为旧钥匙。",
   relatedSettings: "旧屋位于停电后的城区边缘。",
   canonRules: "主角不能凭空知道旧屋主人身份。",
   writingStyle: "悬疑、克制、画面感强。",

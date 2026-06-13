@@ -21,6 +21,7 @@ export interface DisplayMessage {
   content: string
   timestamp: number
   conversationId: string
+  taskLabel?: string
   references?: MessageReference[]  // pages cited in this response, saved at creation time
   discarded?: boolean
 }
@@ -43,7 +44,7 @@ interface ChatState {
   setConversationDeAiMode: (id: string, deAiMode: boolean) => void
 
   // Message management
-  addMessage: (role: DisplayMessage["role"], content: string) => void
+  addMessage: (role: DisplayMessage["role"], content: string, options?: { taskLabel?: string }) => void
   setMessages: (messages: DisplayMessage[]) => void
   setConversations: (conversations: Conversation[]) => void
   setStreaming: (streaming: boolean) => void
@@ -131,7 +132,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
       ),
     })),
 
-  addMessage: (role, content) =>
+  addMessage: (role, content, options) =>
     set((state) => {
       const { activeConversationId, conversations } = state
       if (!activeConversationId) return state
@@ -142,6 +143,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
         content,
         timestamp: Date.now(),
         conversationId: activeConversationId,
+        taskLabel: options?.taskLabel,
       }
 
       // Auto-set title from first user message (first 50 chars)

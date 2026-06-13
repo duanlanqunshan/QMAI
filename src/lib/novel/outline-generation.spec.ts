@@ -38,4 +38,36 @@ describe("outline-generation context fallback", () => {
       hasOutline: false,
     })
   })
+
+  it("includes terminology guard in outline generation context", async () => {
+    mocks.buildContextPackMock.mockResolvedValueOnce({
+      task: "测试",
+      chapterGoal: "",
+      outline: "总纲内容",
+      recentSummaries: [],
+      previousChapterEnding: "",
+      characterStates: "",
+      soulDoc: "",
+      characterAuras: "",
+      cognitionStates: "",
+      foreshadowingStates: "",
+      timeline: "",
+      terminologyGuard: "术语守卫：\"青铜钥\"不能改名。",
+      relatedSettings: "祠堂设定",
+      canonRules: "",
+      writingStyle: "",
+      searchResults: "",
+      graphSearchResults: "",
+      mustDo: "",
+      mustAvoid: "",
+      nextChapterAdvice: "",
+      revisionDirectives: "",
+    })
+
+    const prompt = await buildOutlineGenerationPrompt("E:/Novel", "通用", "短篇", "测试")
+
+    expect(prompt).toContain("术语守卫")
+    expect(prompt).toContain("青铜钥")
+    expect(prompt).toContain("祠堂设定")
+  })
 })
