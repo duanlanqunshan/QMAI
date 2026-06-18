@@ -18,6 +18,7 @@
  */
 
 let pluginFetchPromise: Promise<typeof globalThis.fetch> | null = null
+let httpStreamFetchPromise: Promise<typeof globalThis.fetch | null> | null = null
 
 /**
  * True when running outside a browser / webview (vitest, SSR, any
@@ -30,6 +31,42 @@ const isNodeEnv = typeof window === "undefined"
 const isTauriEnv = (): boolean =>
   typeof window !== "undefined" && "__TAURI_INTERNALS__" in window
 
+async function getPluginFetch(): Promise<typeof globalThis.fetch> {
+  if (!pluginFetchPromise) {
+    if (isNodeEnv || !isTauriEnv()) {
+      pluginFetchPromise = Promise.resolve(globalThis.fetch.bind(globalThis))
+    } else {
+      pluginFetchPromise = (async () => {
+        try {
+          const m = await import("@tauri-apps/plugin-http")
+          return m.fetch as unknown as typeof globalThis.fetch
+        } catch {
+          return globalThis.fetch.bind(globalThis)
+        }
+      })()
+    }
+  }
+  return pluginFetchPromise
+}
+
+async function getHttpStreamFetch(): Promise<((typeof globalThis.fetch) | null)> {
+  if (!httpStreamFetchPromise) {
+    if (isNodeEnv || !isTauriEnv()) {
+      httpStreamFetchPromise = Promise.resolve(null)
+    } else {
+      httpStreamFetchPromise = (async () => {
+        try {
+          const { getHttpStreamFetchIfAvailable } = await import("./http-stream-client")
+          return getHttpStreamFetchIfAvailable()
+        } catch {
+          return null
+        }
+      })()
+    }
+  }
+  return httpStreamFetchPromise
+}
+
 /**
  * Returns a fetch function that routes through Tauri's HTTP plugin in
  * production, falling back to the platform's native fetch in non-Tauri
@@ -41,21 +78,32 @@ const isTauriEnv = (): boolean =>
  * The promise is cached, so repeated calls don't re-import the plugin.
  */
 export function getHttpFetch(): Promise<typeof globalThis.fetch> {
-  if (!pluginFetchPromise) {
-    if (isNodeEnv || !isTauriEnv()) {
-      // Bind so `this === globalThis` — Node's fetch requires it.
-      pluginFetchPromise = Promise.resolve(globalThis.fetch.bind(globalThis))
-    } else {
-      pluginFetchPromise = import("@tauri-apps/plugin-http")
-        .then((m) => m.fetch as unknown as typeof globalThis.fetch)
-        .catch(() => globalThis.fetch.bind(globalThis))
+  return Promise.resolve(async (input: RequestInfo | URL, init?: RequestInit) => {
+    if (!isNodeEnv && isTauriEnv()) {
+      try {
+        const url = typeof input === "string"
+          ? input
+          : input instanceof URL
+            ? input.href
+            : input.url
+        const { shouldUseHttpStreamFetch } = await import("./http-stream-client")
+        if (shouldUseHttpStreamFetch(url, init)) {
+          const streamFetch = await getHttpStreamFetch()
+          if (streamFetch) return streamFetch(input, init)
+        }
+      } catch {
+        // Fallback to plugin/native fetch below.
+      }
     }
-  }
-  return pluginFetchPromise
+
+    const pluginFetch = await getPluginFetch()
+    return pluginFetch(input, init)
+  }) as Promise<typeof globalThis.fetch>
 }
 
 export function resetHttpFetchForTests(): void {
   pluginFetchPromise = null
+  httpStreamFetchPromise = null
 }
 
 /**

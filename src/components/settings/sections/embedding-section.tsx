@@ -16,6 +16,7 @@ import { fetchEmbeddingModelList } from "@/lib/settings-model-list"
 import { testSettingsEmbeddingModel } from "@/lib/settings-model-test"
 import { ModelSelectInput } from "../model-select-input"
 import { ResourceLink } from "../resource-link"
+import { SecretInput } from "../secret-input"
 import type { SettingsDraft, DraftSetter } from "../settings-types"
 
 const SILICONFLOW_RESOURCE_URL = "https://cloud.siliconflow.cn/i/1lKTd7hi"
@@ -288,8 +289,7 @@ export function EmbeddingSection({ draft, setDraft }: Props) {
 
             <div className="space-y-2">
               <Label>{t("settings.sections.embedding.apiKey")}</Label>
-              <Input
-                type="password"
+              <SecretInput
                 value={draft.embeddingApiKey}
                 onChange={(e) => setDraft("embeddingApiKey", e.target.value)}
                 placeholder={t("settings.sections.embedding.apiKeyPlaceholder")}

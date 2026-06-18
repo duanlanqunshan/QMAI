@@ -14,6 +14,7 @@ import { getChapterVolumes } from "./volume"
 import { readSoulDoc } from "./soul-doc"
 import { buildTerminologyGuardPrompt } from "./terminology-guard"
 import type { DataSource, ContextLoadContext } from "./context-data-source"
+import { tokenizeQuery } from "@/lib/search"
 
 // 导入现有的辅助函数
 import {
@@ -269,6 +270,9 @@ export const relatedSettingsDataSource: DataSource<string> = {
   priority: 10,
   async load(context: ContextLoadContext): Promise<string> {
     try {
+      const chapterOutline = context.chapterNumber
+        ? await readChapterOutlineContent(context.projectPath, context.chapterNumber).catch(() => "")
+        : ""
       const contextTags = extractFrontmatterList(context.selectedFrontmatter?.tags)
       const contextStatuses = [
         context.selectedFrontmatter?.status,
@@ -278,15 +282,23 @@ export const relatedSettingsDataSource: DataSource<string> = {
         .flatMap(value => extractFrontmatterList(value))
         .map(normalizeMetaValue)
         .filter(Boolean)
-      const queryParts = ["setting", "设定", "location", "地点", ...contextTags, ...contextStatuses]
+      const queryParts = [
+        "setting", "设定", "location", "地点", "organization", "势力", "人物", "角色", "规则",
+        ...contextTags,
+        ...contextStatuses,
+        ...tokenizeQuery(context.task).slice(0, 12),
+        ...tokenizeQuery(chapterOutline).slice(0, 20),
+      ]
       const results = await searchWiki(context.projectPath, Array.from(new Set(queryParts)).join(" "))
       if (results.length > 0) {
         const candidates = await Promise.all(
-          results.slice(0, 12).map(async (result) => {
+          results.slice(0, 20).map(async (result) => {
             const content = await readFile(result.path).catch(() => "")
             if (!content) return null
             const frontmatter = parseFrontmatter(content).frontmatter
+            const title = result.title || result.path.split("/").pop() || ""
             const score = scoreSettingCandidate(frontmatter, contextTags, contextStatuses)
+              + scoreSettingRelevance(title, content, context.task, chapterOutline, context.chapterNumber)
             return { content, score }
           }),
         )
@@ -338,6 +350,35 @@ export function scoreSettingCandidate(
   if (candidateTags.length === 0 && candidateStatuses.length === 0) {
     score += 1
   }
+  return score
+}
+
+function scoreSettingRelevance(
+  title: string,
+  content: string,
+  task: string,
+  chapterOutline: string,
+  chapterNumber?: number,
+): number {
+  const titleLower = title.toLowerCase()
+  const contentLower = content.toLowerCase()
+  const queryTokens = Array.from(new Set([
+    ...tokenizeQuery(task),
+    ...tokenizeQuery(chapterOutline),
+  ])).slice(0, 24)
+
+  let score = 0
+  for (const token of queryTokens) {
+    if (token.length < 2) continue
+    if (titleLower.includes(token)) score += 5
+    if (contentLower.includes(token)) score += 2
+  }
+
+  if (chapterNumber) {
+    const chapterPattern = new RegExp(`第\\s*${chapterNumber}\\s*[章节回]|chapter\\s*${chapterNumber}\\b`, "i")
+    if (chapterPattern.test(title) || chapterPattern.test(content)) score += 12
+  }
+
   return score
 }
 

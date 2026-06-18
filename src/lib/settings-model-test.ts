@@ -1,4 +1,4 @@
-import { fetchEmbedding } from "@/lib/embedding"
+import { fetchEmbedding, getLastEmbeddingError } from "@/lib/embedding"
 import { streamChat } from "@/lib/llm-client"
 import { isDirectRerankEndpoint, requestDirectRerank } from "@/lib/rerank-api"
 import { fetchLlmModelList } from "@/lib/settings-model-list"
@@ -41,6 +41,13 @@ export function normalizeModelTestError(error: Error): Error {
     return new Error("当前中转站限制了客户端来源，拒绝了桌面端、浏览器或常见 SDK 请求。请联系中转站放开通用 OpenAI 兼容 API，或切换可直连的中转站。")
   }
 
+  const unavailableFunction = extractUnavailableFunction(message)
+  if (unavailableFunction) {
+    return new Error(
+      `当前账号无权使用这个 NVIDIA 模型，或填写的模型 ID 不存在。服务端返回的 function id 为 ${unavailableFunction}。请先从“拉取模型列表”里重新选择可用模型，或到 NVIDIA 控制台确认该账号已开通这个 embedding 模型。`,
+    )
+  }
+
   const unsupportedModel = extractUnsupportedModel(message)
   if (unsupportedModel || (/HTTP 404/i.test(message) && /模型|model/i.test(message))) {
     return new Error(
@@ -63,6 +70,11 @@ function extractUnsupportedModel(message: string): string | null {
     if (matched) return matched
   }
   return null
+}
+
+function extractUnavailableFunction(message: string): string | null {
+  const matched = message.match(/Function\s+'([^']+)'\s*:\s*Not found for account/i)?.[1]?.trim()
+  return matched || null
 }
 
 async function resolveChatModelConfig(config: LlmConfig): Promise<{ config: LlmConfig; model: string }> {
@@ -188,10 +200,16 @@ export async function testSettingsEmbeddingModel(config: EmbeddingConfig): Promi
     "这是一段用于测试嵌入模型可用性的短文本。",
     config,
     1,
+    "query",
   )
 
   if (!vector || vector.length === 0) {
-    throw new Error("嵌入模型没有返回有效向量，请检查接口、密钥和模型名称。")
+    throw normalizeModelTestError(
+      new Error(
+        getLastEmbeddingError()
+        ?? "嵌入模型没有返回有效向量，请检查接口、密钥和模型名称。",
+      ),
+    )
   }
 
   return {
@@ -225,25 +243,54 @@ export async function testSettingsRerankModel(
     }
   }
 
-  const result = await runChatModelTest(
-    config,
-    [
-      "你正在执行重排模型测试。",
-      "请根据查询将候选结果按相关性排序，只返回 JSON。",
-      '返回格式必须是：{"order":[{"id":"a","score":1},{"id":"b","score":0.5}]}',
-      "查询：主角寻找关键线索",
-      "候选：",
-      JSON.stringify([
-        { id: "a", title: "主角在旧仓库找到线索", snippet: "主角在旧仓库翻到了旧地图，并确认线索来源。" },
-        { id: "b", title: "配角午饭安排", snippet: "配角讨论午饭吃什么，与查找线索无关。" },
-      ], null, 2),
-    ].join("\n"),
-  )
+  let result: LlmModelTestResult
+  try {
+    result = await runChatModelTest(
+      config,
+      [
+        "你正在执行重排模型测试。",
+        "请根据查询将候选结果按相关性排序，只返回 JSON。",
+        '返回格式必须是：{"order":[{"id":"a","score":1},{"id":"b","score":0.5}]}',
+        "查询：主角寻找关键线索",
+        "候选：",
+        JSON.stringify([
+          { id: "a", title: "主角在旧仓库找到线索", snippet: "主角在旧仓库翻到了旧地图，并确认线索来源。" },
+          { id: "b", title: "配角午饭安排", snippet: "配角讨论午饭吃什么，与查找线索无关。" },
+        ], null, 2),
+      ].join("\n"),
+    )
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error)
+    if (/reasoning \/ chain-of-thought/i.test(message)) {
+      return {
+        model,
+        content:
+          "模型已连通，但它只输出了思考过程，没有输出最终 JSON 结果。" +
+          "这类模型不适合作为重排模型，建议换成更稳定遵循指令的非推理模型。",
+        usedMainLlm,
+      }
+    }
+    throw error
+  }
 
-  const jsonText = extractJsonObject(result.content)
-  const parsed = JSON.parse(jsonText) as { order?: Array<{ id?: string }> }
-  if (!Array.isArray(parsed.order) || parsed.order.length === 0 || !parsed.order[0]?.id) {
-    throw new Error("重排模型返回了内容，但结果格式不正确。")
+  try {
+    const jsonText = extractJsonObject(result.content)
+    const parsed = JSON.parse(jsonText) as { order?: Array<{ id?: string }> }
+    if (!Array.isArray(parsed.order) || parsed.order.length === 0 || !parsed.order[0]?.id) {
+      throw new Error("重排模型返回了内容，但结果格式不正确。")
+    }
+  } catch {
+    const connectivityResult = await runChatModelTest(
+      config,
+      "你正在执行重排模型连通性测试。请只回答“重排模型测试成功”。",
+    )
+    return {
+      model,
+      content:
+        `${connectivityResult.content}\n\n` +
+        "注意：模型已连通，但没有严格按 JSON 返回重排结果。实际重排时可能退回原始顺序，建议换一个更遵循指令的模型。",
+      usedMainLlm,
+    }
   }
 
   return {

@@ -10,6 +10,7 @@ import { testSettingsRerankModel } from "@/lib/settings-model-test"
 import { normalizeEndpoint } from "@/lib/endpoint-normalizer"
 import { ModelSelectInput } from "../model-select-input"
 import { ResourceLink } from "../resource-link"
+import { SecretInput } from "../secret-input"
 import type { SettingsDraft, DraftSetter } from "../settings-types"
 import type { CustomApiMode, LlmConfig, RerankConfig } from "@/stores/wiki-store"
 
@@ -330,8 +331,7 @@ export function RerankSection({ draft, setDraft }: Props) {
                 {needsApiKey && (
                   <div className="space-y-2">
                     <Label>{t("settings.sections.rerank.apiKey")}</Label>
-                    <Input
-                      type="password"
+                    <SecretInput
                       value={config.apiKey}
                       onChange={(e) => updateRerankConfig({ apiKey: e.target.value })}
                       placeholder={t("settings.sections.rerank.apiKeyPlaceholder")}

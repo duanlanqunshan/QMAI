@@ -1,0 +1,8 @@
+# Skip the Rust build output — never push binaries/native build artifacts.
+target/
+**/*.rs.bk
+# Tauri .cargo and rustc artifacts
+.cargo/
+#
+# Local cargo lock for development (kept by parent repo).
+# Allow `Cargo.toml` to be tracked; this is only for `target/`.

@@ -1,133 +1,79 @@
-import { Suspense, lazy, useCallback, useEffect, useRef, useState } from "react"
+import { useState, useCallback, useRef, useEffect } from "react"
+import { Maximize2, Minimize2, FileText, BookOpen } from "lucide-react"
 import { PreviewPanel } from "./preview-panel"
-import { clampChatHeight, clampChatWidth } from "@/lib/workspace-layout"
-import { useWikiStore } from "@/stores/wiki-store"
-import { shouldShowRightDockChat, shouldShowWritingChat } from "./chat-layout"
+import { WritingGuidePanel } from "./writing-guide-panel"
 
-const ChatPanel = lazy(async () => {
-  const mod = await import("@/components/chat/chat-panel")
-  return { default: mod.ChatPanel }
-})
+type WritingTab = "guide" | "content"
 
 export function WritingWorkspace() {
+  const [activeTab, setActiveTab] = useState<WritingTab>("guide")
+  const [isFullscreen, setIsFullscreen] = useState(false)
   const containerRef = useRef<HTMLDivElement>(null)
-  const resizingRef = useRef(false)
-  const horizontalResizingRef = useRef(false)
-  const chatExpanded = useWikiStore((s) => s.chatExpanded)
-  const chatDockPosition = useWikiStore((s) => s.chatDockPosition)
-  const [chatHeight, setChatHeight] = useState(260)
-  const [chatWidth, setChatWidth] = useState(360)
 
   useEffect(() => {
-    const saved = Number(localStorage.getItem("lk-chat-height") ?? "260")
-    if (Number.isFinite(saved) && saved > 0) {
-      setChatHeight(clampChatHeight(saved))
+    const onFullscreenChange = () => {
+      setIsFullscreen(Boolean(document.fullscreenElement))
     }
-    const savedWidth = Number(localStorage.getItem("lk-chat-right-width") ?? "360")
-    if (Number.isFinite(savedWidth) && savedWidth > 0) {
-      setChatWidth(clampChatWidth(savedWidth))
-    }
+    document.addEventListener("fullscreenchange", onFullscreenChange)
+    return () => document.removeEventListener("fullscreenchange", onFullscreenChange)
   }, [])
 
-  useEffect(() => {
-    localStorage.setItem("lk-chat-height", String(chatHeight))
-  }, [chatHeight])
-
-  useEffect(() => {
-    localStorage.setItem("lk-chat-right-width", String(chatWidth))
-  }, [chatWidth])
-
-  const startResize = useCallback((event: React.MouseEvent<HTMLDivElement>) => {
-    event.preventDefault()
-    resizingRef.current = true
-    document.body.style.cursor = "row-resize"
-    document.body.style.userSelect = "none"
-    document.body.dataset.panelResizing = "true"
-
-    const handleMouseMove = (nextEvent: MouseEvent) => {
-      if (!resizingRef.current || !containerRef.current) return
-      const rect = containerRef.current.getBoundingClientRect()
-      const nextHeight = rect.bottom - nextEvent.clientY
-      setChatHeight(clampChatHeight(nextHeight))
+  const toggleFullscreen = useCallback(async () => {
+    if (!containerRef.current) return
+    if (!document.fullscreenElement) {
+      await containerRef.current.requestFullscreen()
+      setIsFullscreen(true)
+    } else {
+      await document.exitFullscreen()
+      setIsFullscreen(false)
     }
-
-    const handleMouseUp = () => {
-      resizingRef.current = false
-      document.body.style.cursor = ""
-      document.body.style.userSelect = ""
-      delete document.body.dataset.panelResizing
-      document.removeEventListener("mousemove", handleMouseMove)
-      document.removeEventListener("mouseup", handleMouseUp)
-    }
-
-    document.addEventListener("mousemove", handleMouseMove)
-    document.addEventListener("mouseup", handleMouseUp)
   }, [])
-
-  const startHorizontalResize = useCallback((event: React.MouseEvent<HTMLDivElement>) => {
-    event.preventDefault()
-    horizontalResizingRef.current = true
-    document.body.style.cursor = "col-resize"
-    document.body.style.userSelect = "none"
-    document.body.dataset.panelResizing = "true"
-
-    const handleMouseMove = (nextEvent: MouseEvent) => {
-      if (!horizontalResizingRef.current || !containerRef.current) return
-      const rect = containerRef.current.getBoundingClientRect()
-      const nextWidth = rect.right - nextEvent.clientX
-      setChatWidth(clampChatWidth(nextWidth))
-    }
-
-    const handleMouseUp = () => {
-      horizontalResizingRef.current = false
-      document.body.style.cursor = ""
-      document.body.style.userSelect = ""
-      delete document.body.dataset.panelResizing
-      document.removeEventListener("mousemove", handleMouseMove)
-      document.removeEventListener("mouseup", handleMouseUp)
-    }
-
-    document.addEventListener("mousemove", handleMouseMove)
-    document.addEventListener("mouseup", handleMouseUp)
-  }, [])
-
-  if (shouldShowRightDockChat(chatExpanded, chatDockPosition)) {
-    return (
-      <div ref={containerRef} className="flex h-full min-h-0 overflow-hidden bg-background">
-        <div className="min-w-0 flex-1 overflow-hidden">
-          <PreviewPanel />
-        </div>
-        <div
-          className="w-1.5 shrink-0 cursor-col-resize bg-border/40 transition-colors hover:bg-primary/30 active:bg-primary/40"
-          onMouseDown={startHorizontalResize}
-        />
-        <div className="h-full min-h-0 shrink-0 overflow-hidden border-l bg-background" style={{ width: chatWidth }}>
-          <Suspense fallback={<div className="flex h-full items-center justify-center text-sm text-muted-foreground">Loading...</div>}>
-            <ChatPanel />
-          </Suspense>
-        </div>
-      </div>
-    )
-  }
 
   return (
-    <div ref={containerRef} className="flex h-full min-h-0 flex-col overflow-hidden bg-background">
-      <div className="min-h-0 flex-1 overflow-hidden">
-        <PreviewPanel />
+    <div
+      ref={containerRef}
+      className="flex h-full flex-col overflow-hidden bg-background"
+    >
+      <div className="flex h-10 shrink-0 items-center gap-1 border-b bg-muted/20 px-2">
+        <button
+          onClick={() => setActiveTab("guide")}
+          className={`flex items-center gap-1.5 rounded px-3 py-1.5 text-xs font-medium transition-colors ${
+            activeTab === "guide"
+              ? "bg-background text-foreground shadow-sm"
+              : "text-muted-foreground hover:bg-accent hover:text-foreground"
+          }`}
+        >
+          <FileText className="h-3.5 w-3.5" />
+          章纲与要求
+        </button>
+        <button
+          onClick={() => setActiveTab("content")}
+          className={`flex items-center gap-1.5 rounded px-3 py-1.5 text-xs font-medium transition-colors ${
+            activeTab === "content"
+              ? "bg-background text-foreground shadow-sm"
+              : "text-muted-foreground hover:bg-accent hover:text-foreground"
+          }`}
+        >
+          <BookOpen className="h-3.5 w-3.5" />
+          写作内容
+        </button>
+        <div className="ml-auto flex items-center gap-1">
+          <button
+            onClick={toggleFullscreen}
+            className="rounded p-1.5 text-muted-foreground hover:bg-accent hover:text-foreground"
+            title={isFullscreen ? "退出全屏" : "全屏"}
+          >
+            {isFullscreen ? (
+              <Minimize2 className="h-3.5 w-3.5" />
+            ) : (
+              <Maximize2 className="h-3.5 w-3.5" />
+            )}
+          </button>
+        </div>
       </div>
-      {shouldShowWritingChat(chatExpanded, chatDockPosition) && (
-        <>
-          <div
-            className="h-1.5 shrink-0 cursor-row-resize bg-border/40 transition-colors hover:bg-primary/30 active:bg-primary/40"
-            onMouseDown={startResize}
-          />
-          <div className="shrink-0 overflow-hidden border-t bg-background" style={{ height: chatHeight }}>
-            <Suspense fallback={<div className="flex h-full items-center justify-center text-sm text-muted-foreground">Loading...</div>}>
-              <ChatPanel />
-            </Suspense>
-          </div>
-        </>
-      )}
+      <div className="min-h-0 flex-1 overflow-hidden">
+        {activeTab === "guide" ? <WritingGuidePanel /> : <PreviewPanel />}
+      </div>
     </div>
   )
 }

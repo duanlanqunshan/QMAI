@@ -33,6 +33,14 @@ export interface OutlineImportCandidate {
   targetFolders: string[]
 }
 
+type InferredOutlineMeta = {
+  title: string
+  targetFolders: string[]
+  outlineType?: "chapter-outline" | "volume-outline" | "story-outline"
+  outlineCategory?: "chapter" | "characters" | "locations" | "organizations" | "power-system" | "foreshadowing" | "story"
+  chapterNumber?: number
+}
+
 function yamlEscape(value: string): string {
   return value.replace(/\\/g, "\\\\").replace(/"/g, '\\"')
 }
@@ -46,12 +54,101 @@ function sanitizeImportedBody(content: string): string {
   return next
 }
 
-function buildOutlineMarkdown(title: string, content: string): string {
+function extractChapterNumber(text: string): number | undefined {
+  const match = text.match(/第\s*(\d+)\s*[章节回]/i) ?? text.match(/chapter\s*(\d+)\b/i)
+  if (!match?.[1]) return undefined
+  const value = Number.parseInt(match[1], 10)
+  return Number.isFinite(value) && value > 0 ? value : undefined
+}
+
+function inferOutlineMeta(sourcePath: string, rawContent: string, targetFolders: string[] = []): InferredOutlineMeta {
+  const normalizedPath = normalizePath(sourcePath)
+  const title = getFileStem(normalizedPath).trim() || "untitled"
+  const loweredTitle = title.toLowerCase()
+  const loweredPath = normalizedPath.toLowerCase()
+  const body = sanitizeImportedBody(rawContent)
+  const loweredBody = body.slice(0, 4000).toLowerCase()
+  const combined = `${loweredPath}\n${loweredTitle}\n${loweredBody}`
+  const chapterNumber = extractChapterNumber(title) ?? extractChapterNumber(body)
+
+  if (chapterNumber || /章节细纲|章纲|分章大纲|chapter outline/.test(combined)) {
+    return {
+      title,
+      targetFolders: ["章节细纲"],
+      outlineType: "chapter-outline",
+      outlineCategory: "chapter",
+      chapterNumber,
+    }
+  }
+  if (/人物小传|人物设定|角色设定|character brief|character profile/.test(combined)) {
+    return {
+      title,
+      targetFolders: ["人物小传"],
+      outlineCategory: "characters",
+    }
+  }
+  if (/组织势力|势力设定|阵营|组织设定|faction|organization/.test(combined)) {
+    return {
+      title,
+      targetFolders: ["组织势力设定"],
+      outlineCategory: "organizations",
+    }
+  }
+  if (/金手指|能力体系|力量体系|规则体系|power system|ability system/.test(combined)) {
+    return {
+      title,
+      targetFolders: ["金手指与能力体系"],
+      outlineCategory: "power-system",
+    }
+  }
+  if (/伏笔计划|伏笔|回收计划|foreshadow/.test(combined)) {
+    return {
+      title,
+      targetFolders: ["伏笔计划"],
+      outlineCategory: "foreshadowing",
+    }
+  }
+  if (/地点设定|场景设定|地图设定|location|place setting/.test(combined)) {
+    return {
+      title,
+      targetFolders: ["地点设定"],
+      outlineCategory: "locations",
+    }
+  }
+  if (/总大纲|故事大纲|剧情总纲|story outline|overall outline/.test(combined)) {
+    return {
+      title,
+      targetFolders: ["总大纲"],
+      outlineType: "story-outline",
+      outlineCategory: "story",
+    }
+  }
+  if (/分卷|卷纲|volume outline/.test(combined)) {
+    return {
+      title,
+      targetFolders: ["分卷大纲"],
+      outlineType: "volume-outline",
+      outlineCategory: "story",
+    }
+  }
+  return {
+    title,
+    targetFolders: targetFolders.length > 0 ? targetFolders : ["未分类导入"],
+  }
+}
+
+function buildOutlineMarkdown(meta: InferredOutlineMeta, content: string, sourcePath: string): string {
   const body = sanitizeImportedBody(content)
+  const relativeSourcePath = normalizePath(sourcePath)
   const lines = [
     "---",
     "type: outline",
-    `title: "${yamlEscape(title)}"`,
+    `title: "${yamlEscape(meta.title)}"`,
+    ...(meta.outlineType ? [`outline_type: ${meta.outlineType}`] : []),
+    ...(meta.outlineCategory ? [`outline_category: ${meta.outlineCategory}`] : []),
+    ...(meta.targetFolders[0] ? [`outline_folder: "${yamlEscape(meta.targetFolders[0])}"`] : []),
+    ...(meta.chapterNumber ? [`chapter_number: ${meta.chapterNumber}`] : []),
+    `sources: ["${yamlEscape(relativeSourcePath)}"]`,
     "---",
     "",
   ]
@@ -59,7 +156,7 @@ function buildOutlineMarkdown(title: string, content: string): string {
   if (body.startsWith("#")) {
     lines.push(body)
   } else {
-    lines.push(`# ${title}`)
+    lines.push(`# ${meta.title}`)
     if (body) {
       lines.push("")
       lines.push(body)
@@ -113,12 +210,12 @@ async function importSingleOutlineFile(
   const normalizedSourcePath = normalizePath(sourcePath)
   if (!isOutlineImportablePath(normalizedSourcePath)) return null
 
-  const title = getFileStem(normalizedSourcePath).trim() || "untitled"
-  const targetDir = await ensureOutlineDirectory(projectPath, targetFolders)
-  const targetPath = await getUniqueOutlinePath(targetDir, `${makeSafeFileSlug(title)}.md`)
   const content = await readFile(normalizedSourcePath)
+  const meta = inferOutlineMeta(normalizedSourcePath, content, targetFolders)
+  const targetDir = await ensureOutlineDirectory(projectPath, meta.targetFolders)
+  const targetPath = await getUniqueOutlinePath(targetDir, `${makeSafeFileSlug(meta.title)}.md`)
 
-  await writeFile(targetPath, buildOutlineMarkdown(title, content))
+  await writeFile(targetPath, buildOutlineMarkdown(meta, content, normalizedSourcePath))
   return targetPath
 }
 

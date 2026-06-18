@@ -858,16 +858,22 @@ export function SidebarPanel() {
     })
     if (!selected || (Array.isArray(selected) && selected.length === 0)) return
 
+    const sourcePaths = Array.isArray(selected) ? selected : [selected]
+    const memoryDecision = await confirmOutlineMemoryExtraction(sourcePaths.length)
+    if (memoryDecision === "cancel") return
+    const extractMemory = memoryDecision === "extract"
     setOutlineImporting(true)
     try {
       const projectPath = normalizePath(project.path)
-      const sourcePaths = Array.isArray(selected) ? selected : [selected]
       const importedPaths = await importOutlineFiles(projectPath, sourcePaths)
       if (importedPaths.length === 0) {
         window.alert(t("novel.outlineImport.emptyResult", { defaultValue: "没有找到可导入的大纲文档。" }))
         return
       }
       await refreshTree(projectPath, importedPaths[0])
+      if (extractMemory) {
+        await extractImportedOutlineMemories(projectPath, importedPaths)
+      }
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error)
       console.error("[SidebarPanel] outline file import failed:", error)

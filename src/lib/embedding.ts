@@ -81,12 +81,17 @@ export async function fetchEmbedding(
   text: string,
   cfg: EmbeddingConfig,
   maxRetries = 3,
+  inputType: "query" | "passage" = "passage",
 ): Promise<number[] | null> {
   if (!cfg.endpoint) return null
 
   const isGoogleNative = isGoogleEmbeddingConfig(cfg)
   const isDashScope = isDashScopeEmbeddingConfig(cfg)
-  const endpoint = isGoogleNative ? googleEmbeddingEndpoint(cfg) : cfg.endpoint
+  const endpoint = isGoogleNative
+    ? googleEmbeddingEndpoint(cfg)
+    : isDashScope
+      ? cfg.endpoint.trim()
+      : normalizeEmbeddingEndpoint(cfg.endpoint)
   const headers: Record<string, string> = { "Content-Type": "application/json" }
   if (cfg.apiKey) {
     if (isGoogleNative) {
@@ -112,17 +117,16 @@ export async function fetchEmbedding(
             ? googleEmbeddingBody(cfg.model, current, cfg.outputDimensionality)
             : isDashScope
             ? dashScopeEmbeddingBody(cfg.model, current)
-            : { model: cfg.model, input: current },
+            : openAiCompatibleEmbeddingBody(cfg, current, inputType),
         ),
       })
 
       if (resp.ok) {
         const data = await resp.json()
-        const embedding = isGoogleNative
-          ? data?.embedding?.values ?? null
-          : isDashScope
-          ? data?.output?.embeddings?.[0]?.embedding ?? null
-          : data?.data?.[0]?.embedding ?? null
+        const embedding = extractEmbeddingVector(data, {
+          isGoogleNative,
+          isDashScope,
+        })
         if (isNonEmptyNumberArray(embedding)) {
           lastEmbeddingError = null
           return embedding
@@ -190,6 +194,76 @@ function isNonEmptyNumberArray(value: unknown): value is number[] {
   return Array.isArray(value)
     && value.length > 0
     && value.every((item) => typeof item === "number" && Number.isFinite(item))
+}
+
+function extractEmbeddingVector(
+  data: any,
+  options: { isGoogleNative: boolean; isDashScope: boolean },
+): number[] | null {
+  if (options.isGoogleNative) {
+    return isNonEmptyNumberArray(data?.embedding?.values) ? data.embedding.values : null
+  }
+
+  if (options.isDashScope) {
+    return isNonEmptyNumberArray(data?.output?.embeddings?.[0]?.embedding)
+      ? data.output.embeddings[0].embedding
+      : null
+  }
+
+  const candidates = [
+    data?.data?.[0]?.embedding,
+    data?.data?.[0]?.vector,
+    data?.embeddings?.[0]?.embedding,
+    data?.embeddings?.[0]?.vector,
+    data?.embedding,
+    data?.vector,
+  ]
+
+  for (const candidate of candidates) {
+    if (isNonEmptyNumberArray(candidate)) return candidate
+  }
+
+  return null
+}
+
+function normalizeEmbeddingEndpoint(endpoint: string): string {
+  const trimmed = endpoint.trim()
+  if (!trimmed) return trimmed
+
+  if (/\/embeddings(?:\?.*)?$/i.test(trimmed)) return trimmed
+  if (/\/chat\/completions(?:\?.*)?$/i.test(trimmed)) {
+    return trimmed.replace(/\/chat\/completions(?:\?.*)?$/i, "/embeddings")
+  }
+  if (/\/responses(?:\?.*)?$/i.test(trimmed)) {
+    return trimmed.replace(/\/responses(?:\?.*)?$/i, "/embeddings")
+  }
+  if (/\/messages(?:\?.*)?$/i.test(trimmed)) {
+    return trimmed.replace(/\/messages(?:\?.*)?$/i, "/embeddings")
+  }
+  return `${trimmed.replace(/\/+$/, "")}/embeddings`
+}
+
+function isNvidiaEmbeddingConfig(cfg: EmbeddingConfig): boolean {
+  const endpoint = cfg.endpoint.toLowerCase()
+  const model = cfg.model.toLowerCase()
+  return endpoint.includes("integrate.api.nvidia.com") || model.includes("nemoretriever") || model.includes("nemotron-embed") || model.includes("embedqa")
+}
+
+function openAiCompatibleEmbeddingBody(
+  cfg: EmbeddingConfig,
+  text: string,
+  inputType: "query" | "passage",
+): Record<string, unknown> {
+  const body: Record<string, unknown> = {
+    model: cfg.model,
+    input: text,
+  }
+
+  if (isNvidiaEmbeddingConfig(cfg)) {
+    body.input_type = inputType
+  }
+
+  return body
 }
 
 function isGoogleEmbeddingConfig(cfg: EmbeddingConfig): boolean {
@@ -387,7 +461,7 @@ export async function embedPage(
   let failedChunks = 0
   for (const chunk of chunks) {
     const embedText = enrichChunkForEmbedding(title, chunk)
-    const vec = await fetchEmbedding(embedText, cfg)
+    const vec = await fetchEmbedding(embedText, cfg, 3, "passage")
     if (vec) {
       rows.push({
         chunkIndex: chunk.index,
@@ -497,7 +571,7 @@ export async function searchByEmbedding(
 ): Promise<PageSearchResult[]> {
   if (!cfg.enabled || !cfg.model) return []
 
-  const queryEmb = await fetchEmbedding(query, cfg)
+  const queryEmb = await fetchEmbedding(query, cfg, 3, "query")
   if (!queryEmb) return []
 
   const t0 = performance.now()

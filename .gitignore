@@ -9,6 +9,18 @@ src-tauri/target/
 .env
 .env.*
 
+# === Bumped-once portable artifacts (stay outside the repo) ===
+*.exe
+*.msi
+*.AppImage
+*.dmg
+*.network-request
+*.network-response
+
+# === Local-only utility scratchpads ===
+/tools/
+/备份/
+
 # === 依赖 ===
 node_modules/
 

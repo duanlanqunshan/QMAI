@@ -212,7 +212,7 @@ jobs:
             platforms = [ordered]@{
               "windows-x86_64" = [ordered]@{
                 signature = $signature
-                url = "https://github.com/Mochocyang/QMAI/releases/latest/download/$assetName"
+                url = "https://github.com/duanlanqunshan/QMAI/releases/latest/download/$assetName"
               }
             }
           }

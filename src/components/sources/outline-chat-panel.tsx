@@ -16,11 +16,91 @@ import { resolveUserVisibleReasoning } from "@/lib/user-visible-reasoning"
 import { runDeepOutlineGeneration } from "@/lib/novel/deep-outline-generation"
 import { createDeepThinkingStreamRenderer } from "@/lib/deep-thinking-stream"
 import { ChatInput } from "@/components/chat/chat-input"
+import { readSelectedChapterNumberForFile } from "@/lib/novel/chapter-utils"
+import { readChapterOutlineContent } from "@/lib/novel/context-engine"
 import {
   buildWebResearchContext,
   collectWebResearch,
   shouldUseWebResearch,
 } from "@/lib/web-research"
+
+type OutlinePreviewState = {
+  key: string
+  title: string
+  content: string
+  requestHint: string
+  empty: boolean
+}
+
+function flattenMarkdownFiles(nodes: Array<{ name: string; path: string; is_dir: boolean; children?: any[] }>): Array<{ name: string; path: string }> {
+  const files: Array<{ name: string; path: string }> = []
+  for (const node of nodes) {
+    if (node.is_dir) {
+      if (node.children) files.push(...flattenMarkdownFiles(node.children))
+      continue
+    }
+    if (node.name.toLowerCase().endsWith(".md")) files.push({ name: node.name, path: node.path })
+  }
+  return files
+}
+
+async function readOutlineFolderPreview(projectPath: string, folderNames: string[], limit = 3): Promise<string> {
+  const pp = normalizePath(projectPath)
+  for (const folderName of folderNames) {
+    try {
+      const tree = await listDirectory(`${pp}/wiki/outlines/${folderName}`)
+      const files = flattenMarkdownFiles(tree).slice(0, limit)
+      if (files.length === 0) continue
+      const contents = await Promise.all(
+        files.map(async (file) => {
+          const content = await readFile(file.path).catch(() => "")
+          if (!content.trim()) return ""
+          return `## ${file.name.replace(/\.md$/i, "")}\n\n${content.slice(0, 2200).trim()}`
+        }),
+      )
+      const merged = contents.filter(Boolean).join("\n\n---\n\n")
+      if (merged.trim()) return merged
+    } catch {
+      // ignore missing folder
+    }
+  }
+  return ""
+}
+
+async function loadOutlineSectionPreview(
+  projectPath: string,
+  selectedFile: string | null | undefined,
+  config: { key: string; title: string; requestHint: string },
+): Promise<OutlinePreviewState> {
+  if (config.key === "chapterOutlines") {
+    const chapterNumber = await readSelectedChapterNumberForFile(selectedFile)
+    const content = chapterNumber ? await readChapterOutlineContent(projectPath, chapterNumber) : ""
+    return {
+      key: config.key,
+      title: config.title,
+      content,
+      requestHint: config.requestHint,
+      empty: !content.trim(),
+    }
+  }
+
+  const folderNamesByKey: Record<string, string[]> = {
+    characterBriefs: ["人物小传"],
+    organizationsOutline: ["组织势力设定", "势力设定"],
+    powerSystem: ["金手指与能力体系", "能力体系"],
+    foreshadowingPlan: ["伏笔计划"],
+    locationsOutline: ["地点设定"],
+  }
+
+  const content = await readOutlineFolderPreview(projectPath, folderNamesByKey[config.key] ?? [])
+  return {
+    key: config.key,
+    title: config.title,
+    content,
+    requestHint: config.requestHint,
+    empty: !content.trim(),
+  }
+}
 
 async function loadOutlineContext(projectPath: string): Promise<{ context: string; sources: string[] }> {
   const pp = normalizePath(projectPath)
@@ -192,9 +272,10 @@ function OutlineAssistantMessage({ msg, index, isStreaming, streamingContent, ac
   )
 }
 
-export function OutlineChatPanel({ onClose }: { onClose: () => void }) {
+export function OutlineChatPanel({ onClose }: { onClose?: () => void }) {
   const project = useWikiStore((s) => s.project)
   const llmConfig = useWikiStore((s) => s.llmConfig)
+  const selectedFile = useWikiStore((s) => s.selectedFile)
 
   const conversations = useOutlineChatStore((s) => s.conversations)
   const activeConversationId = useOutlineChatStore((s) => s.activeConversationId)
@@ -254,10 +335,20 @@ export function OutlineChatPanel({ onClose }: { onClose: () => void }) {
     return () => container.removeEventListener("scroll", handleScroll)
   }, [])
 
+  const [alertMessage, setAlertMessage] = useState<string | null>(null)
+  const [sectionPreview, setSectionPreview] = useState<OutlinePreviewState | null>(null)
+
+  const showAlert = useCallback((msg: string) => {
+    setAlertMessage(msg)
+    setTimeout(() => setAlertMessage(null), 4000)
+  }, [])
+
   const handleSend = useCallback(async (inputText: string) => {
     const prompt = inputText.trim()
-    if (!prompt || !project || isStreaming) return
-    if (!hasUsableLlm(llmConfig)) return
+    if (!prompt) return
+    if (!project) { showAlert("请先打开一个项目，才能使用大纲功能。"); return }
+    if (isStreaming) return
+    if (!hasUsableLlm(llmConfig)) { showAlert("请先配置 LLM（API Key 和模型），才能生成大纲。"); return }
 
     let convId = activeConversationId
     if (!convId) {
@@ -387,11 +478,23 @@ export function OutlineChatPanel({ onClose }: { onClose: () => void }) {
       setIsStreaming(false)
       abortRef.current = null
     }
-  }, [project, isStreaming, llmConfig, activeConversationId, createConversation, addMessage, replaceLastAssistant, removeLastMessage, setIsStreaming, setStreamingContent])
+  }, [project, isStreaming, llmConfig, activeConversationId, createConversation, addMessage, replaceLastAssistant, removeLastMessage, setIsStreaming, setStreamingContent, showAlert])
 
   const handleGenerateSection = useCallback((title: string, requestHint: string) => {
     void handleSend(`请继续生成「${title}」。${requestHint} 请基于已有大纲、章节内容和项目记忆直接输出该分项内容，结构清晰，可保存为大纲。`)
   }, [handleSend])
+
+  const handleSelectSection = useCallback(async (config: { key: string; title: string; requestHint: string }) => {
+    if (!project) {
+      showAlert("请先打开一个项目，才能查看大纲内容。")
+      return
+    }
+    const preview = await loadOutlineSectionPreview(project.path, selectedFile, config)
+    setSectionPreview(preview)
+    if (preview.empty) {
+      showAlert(`当前还没有「${config.title}」内容，可以点击下方面板中的“生成/补全”。`)
+    }
+  }, [project, selectedFile, showAlert])
 
   const handleStop = useCallback(() => {
     abortRef.current?.abort()
@@ -533,11 +636,56 @@ export function OutlineChatPanel({ onClose }: { onClose: () => void }) {
         ))}
         <div className="ml-auto flex items-center gap-1">
           {saveStatus && <span className="text-xs text-muted-foreground">{saveStatus}</span>}
-          <button onClick={onClose} className="rounded p-1 text-muted-foreground hover:bg-accent">
-            <X className="h-3.5 w-3.5" />
-          </button>
+          {onClose ? (
+            <button onClick={onClose} className="rounded p-1 text-muted-foreground hover:bg-accent">
+              <X className="h-3.5 w-3.5" />
+            </button>
+          ) : null}
         </div>
       </div>
+
+      {/* Alert banner */}
+      {alertMessage ? (
+        <div className="border-b bg-amber-50 px-3 py-1.5 text-xs text-amber-700 dark:bg-amber-950/30 dark:text-amber-400">
+          {alertMessage}
+        </div>
+      ) : null}
+
+      {sectionPreview ? (
+        <div className="border-b bg-muted/30 px-3 py-2">
+          <div className="mb-2 flex items-center gap-2">
+            <div className="text-sm font-medium">{sectionPreview.title}</div>
+            <div className="ml-auto flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => handleGenerateSection(sectionPreview.title, sectionPreview.requestHint)}
+                disabled={isStreaming}
+                className="rounded border border-border px-2 py-1 text-xs hover:bg-accent disabled:opacity-50"
+              >
+                {sectionPreview.empty ? "生成" : "补全/重生成"}
+              </button>
+              <button
+                type="button"
+                onClick={() => setSectionPreview(null)}
+                className="rounded border border-border px-2 py-1 text-xs hover:bg-accent"
+              >
+                收起
+              </button>
+            </div>
+          </div>
+          {sectionPreview.empty ? (
+            <div className="rounded-md border border-dashed px-3 py-3 text-xs text-muted-foreground">
+              暂未找到已写好的「{sectionPreview.title}」内容。你可以直接点击“生成”让 AI 创建，之后也可保存为大纲继续迭代。
+            </div>
+          ) : (
+            <div className="max-h-64 overflow-y-auto rounded-md border bg-background px-3 py-2">
+              <div className="prose prose-sm dark:prose-invert max-w-none">
+                <ReactMarkdown>{sectionPreview.content}</ReactMarkdown>
+              </div>
+            </div>
+          )}
+        </div>
+      ) : null}
 
       {/* Messages */}
       <div ref={scrollRef} className="flex-1 overflow-y-auto px-3 py-2 space-y-3">
@@ -592,9 +740,13 @@ export function OutlineChatPanel({ onClose }: { onClose: () => void }) {
             <button
               key={config.key}
               type="button"
-              onClick={() => handleGenerateSection(config.title, config.requestHint)}
+              onClick={() => void handleSelectSection(config)}
               disabled={isStreaming}
-              className="rounded border border-border px-2 py-1 text-xs text-foreground hover:bg-accent disabled:opacity-50"
+              className={`rounded border px-2 py-1 text-xs disabled:opacity-50 ${
+                sectionPreview?.key === config.key
+                  ? "border-primary bg-primary/10 text-foreground"
+                  : "border-border text-foreground hover:bg-accent"
+              }`}
             >
               {config.title}
             </button>

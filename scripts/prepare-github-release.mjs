@@ -66,7 +66,7 @@ const latest = {
   platforms: {
     "windows-x86_64": {
       signature,
-      url: `https://github.com/Mochocyang/QMAI/releases/latest/download/${releaseAssetName}`,
+      url: `https://github.com/duanlanqunshan/QMAI/releases/latest/download/${releaseAssetName}`,
     },
   },
 }

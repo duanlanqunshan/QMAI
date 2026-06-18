@@ -15,6 +15,7 @@ import { testLlmConnection, testLlmFunction, type ProviderTestResult } from "@/l
 import { fetchLlmModelList } from "@/lib/settings-model-list"
 import { testSettingsLlmModel } from "@/lib/settings-model-test"
 import { ModelSelectInput } from "../model-select-input"
+import { SecretInput } from "../secret-input"
 
 export function LlmProviderSection() {
   const { t } = useTranslation()
@@ -454,8 +455,7 @@ function PresetRow({
           {needsApiKey && (
             <div className="space-y-2">
               <Label>{t("settings.sections.llm.apiKey")}</Label>
-              <Input
-                type="password"
+              <SecretInput
                 value={apiKey}
                 onChange={(e) => onChange({ apiKey: e.target.value })}
                 placeholder={

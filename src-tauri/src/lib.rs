@@ -1,5 +1,6 @@
 mod clip_server;
 mod commands;
+mod http_stream;
 mod panic_guard;
 mod proxy;
 mod types;
@@ -102,6 +103,7 @@ pub fn run() {
             app.manage(commands::claude_cli::ClaudeCliState::default());
             app.manage(commands::codex_cli::CodexCliState::default());
             app.manage(commands::file_sync::FileSyncState::default());
+            app.manage(http_stream::HttpStreamState::default());
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -157,6 +159,8 @@ pub fn run() {
             commands::file_sync::retry_file_change_task,
             commands::file_sync::ignore_file_change_task,
             set_proxy_env,
+            http_stream::http_fetch_stream,
+            http_stream::http_fetch_cancel,
         ])
         .on_window_event(|window, event| {
             if let tauri::WindowEvent::CloseRequested { api, .. } = event {

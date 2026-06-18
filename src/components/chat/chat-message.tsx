@@ -48,6 +48,14 @@ export function ChatMessage({ message, isLastAssistant, onRegenerate, novelMode,
   const canResumeUnfinished = Boolean(
     novelMode && isLastAssistant && onContinueUnfinished && canContinueUnfinishedDeepChapter(message.content),
   )
+  const hasFooter = Boolean(
+    saveStatus
+    || (isAssistant && !message.discarded)
+    || (isAssistant && !message.discarded && (hovered || (novelMode && isLastAssistant)))
+    || (isLastAssistant && onRegenerate)
+    || (canResumeUnfinished)
+    || (novelMode && isLastAssistant && (onSaveAsChapter || onContinueNextChapter)),
+  )
 
   return (
     <div
@@ -66,88 +74,118 @@ export function ChatMessage({ message, isLastAssistant, onRegenerate, novelMode,
       >
         {isUser ? <User className="h-4 w-4" /> : <Bot className="h-4 w-4" />}
       </div>
-      <div className="max-w-[80%] flex flex-col gap-1.5">
-        {message.taskLabel && !message.discarded && (
-          <div className={`flex ${isUser ? "justify-end" : "justify-start"}`}>
-            <span className="inline-flex items-center rounded-full border border-blue-500/30 bg-blue-50 px-2 py-0.5 text-[11px] font-medium text-blue-700 dark:bg-blue-950/20 dark:text-blue-300">
-              {message.taskLabel}
-            </span>
-          </div>
-        )}
+      <div className="max-w-[82%] flex flex-col gap-2">
         <div
-          className={`rounded-lg px-3 py-2 text-sm ${
+          className={`overflow-hidden rounded-xl border text-sm shadow-sm ${
             isUser
-              ? "bg-primary text-primary-foreground"
+              ? "border-primary/30 bg-primary text-primary-foreground"
               : message.discarded
-                ? "bg-muted/50 text-muted-foreground/50"
-                : "bg-muted text-foreground"
+                ? "border-border/40 bg-muted/40 text-muted-foreground/50"
+                : "border-border/60 bg-background text-foreground"
           }`}
         >
-          {message.discarded ? (
-            <span className="italic text-xs opacity-60">已废弃</span>
-          ) : isUser ? (
-            <p dir="auto" className="whitespace-pre-wrap break-words">{message.content}</p>
-          ) : (
-            <AgentAwareContent content={message.content} projectPath={projectPath} />
-          )}
-        </div>
-        {isAssistant && !message.discarded && <CitedReferencesPanel content={message.content} savedReferences={message.references} />}
-        {isAssistant && !message.discarded && (
-          <div className="flex items-center gap-1 flex-wrap">
-            {canResumeUnfinished && (
-              <div className="basis-full rounded-md border border-amber-500/30 bg-amber-50/60 px-2 py-1.5 text-[11px] leading-5 text-amber-800 dark:bg-amber-950/20 dark:text-amber-300">
-                这次深度生成已经完成了部分思考过程。点击“继续未完成”会基于上方已有阶段继续往后生成，通常比“重新生成”更节省 token；如果前面的思考方向本身不对，再使用“重新生成”。
+          {(message.taskLabel || (isAssistant && !message.discarded)) && (
+            <div className={`flex items-center justify-between gap-2 border-b px-3 py-2 ${
+              isUser
+                ? "border-primary-foreground/10 bg-primary-foreground/10"
+                : "border-border/60 bg-muted/30"
+            }`}>
+              <div className="flex min-w-0 items-center gap-2">
+                {message.taskLabel && !message.discarded && (
+                  <span className={`inline-flex items-center rounded-full border px-2 py-0.5 text-[11px] font-medium ${
+                    isUser
+                      ? "border-primary-foreground/20 bg-primary-foreground/10 text-primary-foreground"
+                      : "border-blue-500/25 bg-blue-50 text-blue-700 dark:bg-blue-950/20 dark:text-blue-300"
+                  }`}>
+                    {message.taskLabel}
+                  </span>
+                )}
+                {isAssistant && !message.discarded && (
+                  <span className="text-[11px] text-muted-foreground">AI 回复</span>
+                )}
               </div>
-            )}
-            {novelMode && isLastAssistant && onSaveAsChapter && (
-              <button
-                type="button"
-                onClick={() => onSaveAsChapter(message.content)}
-                disabled={isSaving}
-                className="rounded border border-border px-2 py-0.5 text-[11px] text-foreground hover:bg-accent disabled:opacity-50"
-              >
-                {isSaving ? "保存中..." : "保存到章节库"}
-              </button>
-            )}
-            {novelMode && isLastAssistant && onContinueNextChapter && (
-              <button
-                type="button"
-                onClick={onContinueNextChapter}
-                disabled={isSaving}
-                className="rounded border border-border px-2 py-0.5 text-[11px] text-foreground hover:bg-accent disabled:opacity-50"
-              >
-                继续生成下一章
-              </button>
-            )}
-            {canResumeUnfinished && (
-              <button
-                type="button"
-                onClick={onContinueUnfinished}
-                disabled={isSaving}
-                className="rounded border border-amber-500/40 bg-amber-50 px-2 py-0.5 text-[11px] text-amber-800 hover:bg-amber-100 disabled:opacity-50 dark:bg-amber-950/20 dark:text-amber-300 dark:hover:bg-amber-950/35"
-                title="基于已有思考过程继续生成，减少重复消耗"
-              >
-                继续未完成
-              </button>
-            )}
-            {(hovered || (novelMode && isLastAssistant)) && (
-              <CopyButton content={message.content} />
-            )}
-            {isLastAssistant && onRegenerate && (
-              <button
-                type="button"
-                onClick={onRegenerate}
-                className="inline-flex items-center gap-1 rounded px-2 py-0.5 text-[11px] text-muted-foreground hover:text-primary hover:bg-primary/10 transition-colors"
-                title="重新生成这条回复"
-              >
-                <RefreshCw className="h-3 w-3" /> 重新生成
-              </button>
+              {message.discarded && (
+                <span className="italic text-[11px] opacity-60">已废弃</span>
+              )}
+            </div>
+          )}
+
+          <div className="px-3 py-3">
+            {message.discarded ? (
+              <span className="italic text-xs opacity-60">已废弃</span>
+            ) : isUser ? (
+              <p dir="auto" className="whitespace-pre-wrap break-words leading-6">{message.content}</p>
+            ) : (
+              <AgentAwareContent content={message.content} projectPath={projectPath} />
             )}
           </div>
-        )}
-        {saveStatus && (
-          <p className="mt-1 text-xs text-muted-foreground">{saveStatus}</p>
-        )}
+
+          {hasFooter && (
+            <div className={`border-t px-3 py-2 ${
+              isUser
+                ? "border-primary-foreground/10 bg-primary-foreground/5"
+                : "border-border/60 bg-muted/20"
+            }`}>
+              {isAssistant && !message.discarded && <CitedReferencesPanel content={message.content} savedReferences={message.references} />}
+              {isAssistant && !message.discarded && (
+                <div className="mt-2 flex flex-wrap items-center gap-1.5">
+                  {canResumeUnfinished && (
+                    <div className="basis-full rounded-md border border-amber-500/30 bg-amber-50/70 px-2.5 py-2 text-[11px] leading-5 text-amber-800 dark:bg-amber-950/20 dark:text-amber-300">
+                      这次深度生成已经完成了部分思考过程。点击“继续未完成”会基于上方已有阶段继续往后生成，通常比“重新生成”更节省 token；如果前面的思考方向本身不对，再使用“重新生成”。
+                    </div>
+                  )}
+                  {novelMode && isLastAssistant && onSaveAsChapter && (
+                    <button
+                      type="button"
+                      onClick={() => onSaveAsChapter(message.content)}
+                      disabled={isSaving}
+                      className="rounded-md border border-border bg-background px-2.5 py-1 text-[11px] text-foreground hover:bg-accent disabled:opacity-50"
+                    >
+                      {isSaving ? "保存中..." : "保存到章节库"}
+                    </button>
+                  )}
+                  {novelMode && isLastAssistant && onContinueNextChapter && (
+                    <button
+                      type="button"
+                      onClick={onContinueNextChapter}
+                      disabled={isSaving}
+                      className="rounded-md border border-border bg-background px-2.5 py-1 text-[11px] text-foreground hover:bg-accent disabled:opacity-50"
+                    >
+                      继续生成下一章
+                    </button>
+                  )}
+                  {canResumeUnfinished && (
+                    <button
+                      type="button"
+                      onClick={onContinueUnfinished}
+                      disabled={isSaving}
+                      className="rounded-md border border-amber-500/40 bg-amber-50 px-2.5 py-1 text-[11px] text-amber-800 hover:bg-amber-100 disabled:opacity-50 dark:bg-amber-950/20 dark:text-amber-300 dark:hover:bg-amber-950/35"
+                      title="基于已有思考过程继续生成，减少重复消耗"
+                    >
+                      继续未完成
+                    </button>
+                  )}
+                  {(hovered || (novelMode && isLastAssistant)) && (
+                    <CopyButton content={message.content} />
+                  )}
+                  {isLastAssistant && onRegenerate && (
+                    <button
+                      type="button"
+                      onClick={onRegenerate}
+                      className="inline-flex items-center gap-1 rounded-md px-2.5 py-1 text-[11px] text-muted-foreground hover:bg-primary/10 hover:text-primary transition-colors"
+                      title="重新生成这条回复"
+                    >
+                      <RefreshCw className="h-3 w-3" /> 重新生成
+                    </button>
+                  )}
+                </div>
+              )}
+              {saveStatus && (
+                <p className="mt-2 text-xs text-muted-foreground">{saveStatus}</p>
+              )}
+            </div>
+          )}
+        </div>
       </div>
     </div>
   )
@@ -167,7 +205,7 @@ function CopyButton({ content }: { content: string }) {
     <button
       type="button"
       onClick={handleCopy}
-      className="inline-flex items-center gap-1 rounded px-2 py-0.5 text-[11px] text-muted-foreground hover:text-primary hover:bg-primary/10 transition-colors"
+      className="inline-flex items-center gap-1 rounded-md px-2.5 py-1 text-[11px] text-muted-foreground hover:bg-primary/10 hover:text-primary transition-colors"
       title="复制到剪贴板"
     >
       {copied ? <Check className="h-3 w-3" /> : <Copy className="h-3 w-3" />}
@@ -347,20 +385,21 @@ function CitedReferencesPanel({ content, savedReferences }: { content: string; s
   const hasMore = citedPages.length > MAX_COLLAPSED
 
   return (
-    <div className="rounded-md border border-border/60 bg-muted/30 text-xs mb-1">
+    <div className="rounded-lg border border-border/60 bg-background/70 text-xs">
       <button
         type="button"
         onClick={() => setExpanded((value) => !value)}
-        className="flex w-full items-center gap-1.5 px-2 py-1 text-muted-foreground hover:text-foreground transition-colors"
+        className="flex w-full items-center gap-1.5 px-2.5 py-2 text-muted-foreground transition-colors hover:text-foreground"
       >
         <FileText className="h-3 w-3 shrink-0" />
-        <span className="font-medium">引用资料（{citedPages.length}）</span>
+        <span className="font-medium">引用资料</span>
+        <span className="rounded-full bg-muted px-1.5 py-0.5 text-[10px] text-muted-foreground">{citedPages.length}</span>
         {expanded
           ? <ChevronDown className="h-3 w-3 ml-auto" />
           : <ChevronRight className="h-3 w-3 ml-auto" />}
       </button>
       {expanded && (
-        <div className="px-2 pb-1.5">
+        <div className="border-t border-border/50 px-2.5 py-2">
           {visiblePages.map((page, i) => {
             const refType = getRefType(page.path)
             const config = REF_TYPE_CONFIG[refType] ?? REF_TYPE_CONFIG.source
@@ -400,37 +439,37 @@ function CitedReferencesPanel({ content, savedReferences }: { content: string; s
               // buttons individually so each gives feedback.
               <div
                 key={page.path}
-                className="flex w-full items-center gap-1.5 rounded text-left"
+                className="flex w-full items-center gap-1.5 rounded-md text-left"
                 title={page.path}
               >
-                <span className="text-[10px] text-muted-foreground/60 w-4 shrink-0 text-right">[{i + 1}]</span>
+                <span className="w-5 shrink-0 text-right text-[10px] text-muted-foreground/60">[{i + 1}]</span>
                 {hasImages && info?.firstUrl && (
                   <button
                     type="button"
                     onClick={() => handleJumpToImageSource(info.firstUrl!, page.path)}
-                    className="flex shrink-0 items-center gap-0.5 rounded px-1 py-0.5 text-[10px] text-blue-600 hover:bg-blue-100/40 dark:text-blue-400 dark:hover:bg-blue-900/30 transition-colors"
+                    className="flex shrink-0 items-center gap-0.5 rounded-md px-1.5 py-1 text-[10px] text-blue-600 transition-colors hover:bg-blue-100/40 dark:text-blue-400 dark:hover:bg-blue-900/30"
                     title={`打开第一张图片所在原始文档（本页共 ${info.count} 张图片）`}
                   >
                     <ImageIcon className="h-3 w-3" />
                     {info.count}
                   </button>
                 )}
-                <button
-                  type="button"
-                  onClick={openCitedPage}
-                  className="flex min-w-0 flex-1 items-center gap-1.5 rounded px-1 py-0.5 text-left hover:bg-accent/50 transition-colors"
-                >
-                  <Icon className={`h-3 w-3 shrink-0 ${config.color}`} />
-                  <span className="truncate text-foreground/80">{page.title}</span>
+                  <button
+                    type="button"
+                    onClick={openCitedPage}
+                    className="flex min-w-0 flex-1 items-center gap-1.5 rounded-md px-1.5 py-1.5 text-left transition-colors hover:bg-accent/50"
+                  >
+                    <Icon className={`h-3 w-3 shrink-0 ${config.color}`} />
+                    <span className="truncate text-foreground/80">{page.title}</span>
                 </button>
               </div>
             )
           })}
           {hasMore && (
-            <div className="pt-1 text-center text-[10px] text-muted-foreground">
-              当前显示 {visiblePages.length} / {citedPages.length} 条引用
-            </div>
-          )}
+              <div className="pt-2 text-center text-[10px] text-muted-foreground">
+                当前显示 {visiblePages.length} / {citedPages.length} 条引用
+              </div>
+            )}
         </div>
       )}
     </div>
@@ -524,16 +563,21 @@ export function StreamingMessage({ content }: StreamingMessageProps) {
       <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-muted text-muted-foreground">
         <Bot className="h-4 w-4" />
       </div>
-      <div className="max-w-[80%] rounded-lg px-3 py-2 text-sm bg-muted text-foreground">
-        {isThinking ? (
-          <StreamingThinkingBlock content={thinking} />
-        ) : (
-          <>
-            {thinking && <ThinkingBlock content={thinking} defaultOpen={false} />}
-            <MarkdownContent content={answer} />
-            <span className="animate-pulse">▊</span>
-          </>
-        )}
+      <div className="max-w-[82%] overflow-hidden rounded-xl border border-border/60 bg-background text-sm text-foreground shadow-sm">
+        <div className="border-b border-border/60 bg-muted/30 px-3 py-2 text-[11px] text-muted-foreground">
+          AI 正在生成
+        </div>
+        <div className="px-3 py-3">
+          {isThinking ? (
+            <StreamingThinkingBlock content={thinking} />
+          ) : (
+            <>
+              {thinking && <ThinkingBlock content={thinking} defaultOpen={false} />}
+              <MarkdownContent content={answer} />
+              <span className="animate-pulse">▊</span>
+            </>
+          )}
+        </div>
       </div>
     </div>
   )
